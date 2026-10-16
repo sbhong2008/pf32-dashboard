@@ -275,6 +275,7 @@ async function saveCfg() {
 
 function render(keepFocus) {
   $("#nav").innerHTML = TABS.map(([k, n]) => `<button class="${k === tab ? "on" : ""}" onclick="tab='${k}';localStorage.setItem('tab',tab);render()">${n}</button>`).join("");
+  const on = $("#nav .on"); if (on) on.scrollIntoView({inline: "center", block: "nearest"});
   const m = model();
   $("#meta").textContent = `${D.generated.replace("T", " ")} 업데이트 · ${C.tracked.label} ${f2(m.price)} / ${f2(m.ytm)}% · BRL/KRW ${f2(m.fx)}` +
     (D.status.treasury_csv !== "ok" ? " · ⚠ 국채 CSV 부분" : "");
@@ -282,6 +283,22 @@ function render(keepFocus) {
   if (keepFocus) { const q = $("#q"); if (q) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); } }
 }
 
+// 좌우 스와이프로 탭 이동 (가로 스크롤 가능한 표·입력칸 위에서는 무시)
+(() => {
+  let x0, y0, t0, skip;
+  const go = d => { const i = TABS.findIndex(t => t[0] === tab), n = TABS[i + d]; if (!n) return; tab = n[0]; try { localStorage.setItem("tab", tab); } catch (e) {} render(); scrollTo(0, 0); };
+  document.addEventListener("touchstart", e => {
+    const t = e.touches[0]; x0 = t.clientX; y0 = t.clientY; t0 = Date.now();
+    const el = e.target.closest ? e.target.closest(".tbl,input,nav") : null;
+    skip = e.touches.length > 1 || (el && (el.matches("input,nav") || el.scrollWidth > el.clientWidth + 1));
+  }, {passive: true});
+  document.addEventListener("touchend", e => {
+    if (skip || x0 == null) return;
+    const t = e.changedTouches[0], dx = t.clientX - x0, dy = t.clientY - y0;
+    x0 = null;
+    if (Math.abs(dx) > 70 && Math.abs(dx) > Math.abs(dy) * 1.8 && Date.now() - t0 < 600) go(dx < 0 ? 1 : -1);
+  }, {passive: true});
+})();
 $("#btnCsv").onclick = () => $("#csvFile").click();
 $("#csvFile").onchange = e => e.target.files[0] && uploadCsv(e.target.files[0]);
 if (!LOCAL) $("#btnUpdate").textContent = "⟳ 새로고침";
