@@ -1,0 +1,27 @@
+name: update-data
+on:
+  schedule:
+    - cron: "30 9 * * *"   # 매일 09:30 UTC = 18:30 KST (Tesouro Transparente·ECB 일일 갱신 이후)
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - uses: actions/cache@v4
+        with:
+          path: data/cache
+          key: tt-cache-${{ github.run_id }}
+          restore-keys: tt-cache-
+      - run: python3 -I update.py
+      - name: Commit data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/data.json data/fx_brlkrw.csv
+          git diff --cached --quiet || (git commit -m "data: daily update $(date -u +%F)" && git push)

@@ -1,0 +1,79 @@
+{
+  "tracked": {
+    "label": "PF32",
+    "tipo": "Tesouro Prefixado",
+    "venc": "01/01/2032"
+  },
+  "peers": [
+    {
+      "label": "PF29",
+      "tipo": "Tesouro Prefixado",
+      "venc": "01/01/2029"
+    },
+    {
+      "label": "JS37",
+      "tipo": "Tesouro Prefixado com Juros Semestrais",
+      "venc": "01/01/2037"
+    },
+    {
+      "label": "Selic 2031",
+      "tipo": "Tesouro Selic",
+      "venc": "01/03/2031"
+    }
+  ],
+  "stages": [
+    {
+      "name": "STAGE1",
+      "pct": 30,
+      "price": 0,
+      "date": "",
+      "filled": false
+    },
+    {
+      "name": "STAGE2",
+      "pct": 40,
+      "price": 0,
+      "date": "",
+      "filled": false
+    },
+    {
+      "name": "STAGE3",
+      "pct": 30,
+      "price": 0,
+      "date": "",
+      "filled": false
+    }
+  ],
+  "stop_price": 0,
+  "stop_fx": 0,
+  "target_price": 0,
+  "fx_range": {
+    "low": 190,
+    "high": 370
+  },
+  "scenarios": [
+    {
+      "name": "시나리오 A",
+      "prob": 50,
+      "fx": 230,
+      "note": "예시 — 설정에서 본인 값으로 수정"
+    },
+    {
+      "name": "시나리오 B",
+      "prob": 50,
+      "fx": 300,
+      "note": "예시 — 설정에서 본인 값으로 수정"
+    }
+  ],
+  "extra_fx_rows": [
+    230,
+    253,
+    296,
+    300,
+    306,
+    340
+  ],
+  "braz2034_ytm": 6.48,
+  "downloads_glob": "~/Downloads/rendimento-investir*.csv",
+  "history_days": 400
+}

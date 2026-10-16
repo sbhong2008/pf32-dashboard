@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#000000">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<title>PF32 Dashboard</title>
+<style>
+:root{--bg:#e8e8e8;--paper:#fff;--ink:#000;--soft:#f3f3f1;--line:rgba(0,0,0,.18);--up:#000}
+@media (prefers-color-scheme:dark){:root{--bg:#111;--paper:#1b1b1b;--ink:#f2f2f2;--soft:#262626;--line:rgba(255,255,255,.22)}}
+*{box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
+body{margin:0;background:var(--bg);color:var(--ink);font-size:13px}
+.mono,.mono *{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+header{position:sticky;top:0;z-index:5;background:var(--paper);border-bottom:2px solid var(--ink);display:flex;gap:8px;align-items:center;padding:6px 12px;flex-wrap:wrap}
+header .logo{background:var(--ink);color:var(--paper);font-weight:900;padding:2px 8px}
+header .meta{font-size:11px;opacity:.7;flex:1;min-width:160px}
+button{border:1px solid var(--ink);background:var(--paper);color:var(--ink);padding:5px 10px;font-size:12px;cursor:pointer;font-weight:700}
+button.pri{background:var(--ink);color:var(--paper)}
+button:disabled{opacity:.5;cursor:wait}
+nav{display:flex;gap:0;overflow-x:auto;background:var(--paper);border-bottom:1px solid var(--ink)}
+nav button{border:0;border-right:1px solid var(--line);padding:8px 14px;white-space:nowrap}
+nav button.on{background:var(--ink);color:var(--paper)}
+main{max-width:1000px;margin:12px auto;padding:0 12px 40px}
+section{background:var(--paper);border:1px solid var(--ink);margin-bottom:12px}
+section>h2{margin:0;padding:5px 10px;background:var(--ink);color:var(--paper);font-size:12px;letter-spacing:.06em}
+.body{padding:10px}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th,td{padding:5px 8px;text-align:left;border-bottom:1px solid var(--line)}
+th{background:var(--soft);font-size:11px}
+td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}
+.tbl{overflow-x:auto}
+.grid{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}
+.card{border:1px solid var(--ink);padding:8px 10px}
+.card small{display:block;opacity:.65;font-size:10px;letter-spacing:.08em}
+.card b{font-size:20px}
+.tag{display:inline-block;border:1px solid var(--ink);padding:0 5px;font-size:10px;font-weight:700}
+.tag.inv{background:var(--ink);color:var(--paper)}
+.bar{display:flex;height:40px;border:1px solid var(--ink)}
+.bar>div{display:flex;flex-direction:column;justify-content:center;padding:0 8px;border-right:1px solid var(--ink);font-size:11px;overflow:hidden}
+.bar>.f{background:var(--ink);color:var(--paper)}
+.warn{border:1px dashed var(--ink);padding:6px 8px;margin-top:8px;font-size:12px}
+.note{font-size:11px;opacity:.7;margin-top:6px;line-height:1.5}
+.rng{position:relative;height:18px;border:1px solid var(--ink);margin:14px 0 4px}
+.rng i{position:absolute;top:-6px;bottom:-6px;width:3px;background:var(--ink)}
+.rng em{position:absolute;top:18px;font-size:10px;font-style:normal;transform:translateX(-50%);white-space:nowrap}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;align-items:center}
+.kv label{font-size:11px;opacity:.7}
+input{border:1px solid var(--ink);background:var(--paper);color:var(--ink);padding:4px 6px;font-size:13px;width:100%}
+input[type=checkbox]{width:auto}
+#log{white-space:pre-wrap;font-size:10px;opacity:.7;margin-top:6px;max-height:120px;overflow:auto}
+svg text{fill:var(--ink);font-size:10px}
+.hidden{display:none}
+@media print{header,nav,.noprint{display:none!important}body{background:#fff}section{break-inside:avoid}.view{display:block!important}}
+</style>
+</head>
+<body>
+<header>
+  <span class="logo mono">PF32</span>
+  <span class="meta mono" id="meta">로딩 중…</span>
+  <button id="btnCsv" title="rendimento-investir CSV 올리기">📂 CSV</button><input type="file" id="csvFile" accept=".csv,text/csv" hidden>
+  <button class="pri" id="btnUpdate">⟳ 지금 업데이트</button>
+  <button onclick="print()">🖨 인쇄(A4)</button>
+</header>
+<nav id="nav"></nav>
+<main>
+  <div id="log" class="mono hidden"></div>
+  <div id="app"></div>
+</main>
+
+<script>
+const $ = s => document.querySelector(s);
+const f2 = (n, d = 2) => n == null || isNaN(n) ? "—" : n.toLocaleString("en-US", {minimumFractionDigits: d, maximumFractionDigits: d});
+const pct = (n, d = 2) => n == null || isNaN(n) ? "—" : (n >= 0 ? "+" : "") + f2(n, d) + "%";
+const brDate = iso => iso ? iso.slice(8) + "/" + iso.slice(5, 7) + "/" + iso.slice(0, 4) : "—";
+let D, C, tab = localStorage.getItem("tab") || "overview";
+
+const TABS = [["overview","01 최신변동"],["stages","02 분할매수"],["fx","03 환율"],["scen","04 시나리오"],["port","05 5:5 포트폴리오"],["bonds","06 국채 전체"],["settings","설정"]];
+
+const LOCAL = ["127.0.0.1", "localhost"].includes(location.hostname);
+async function jget(u) { try { const r = await fetch(u + "?" + Date.now()); return r.ok ? await r.json() : null; } catch (e) { return null; } }
+const lsGet = k => { try { return JSON.parse(localStorage.getItem(k) || "null"); } catch (e) { return null; } };
+async function load() {
+  D = await jget("data/data.json");
+  if (!D) throw new Error("data/data.json 없음");
+  C = await jget("config.json");
+  const loc = await jget("config.local.json"); if (loc) C = {...C, ...loc};   // 개인 설정(로컬 서버 전용, git 제외)
+  const ls = lsGet("pf32cfg"); if (ls) C = {...C, ...ls};                    // 이 기기 브라우저 설정
+  const lv = lsGet("pf32live");                                              // 직접 올린 Investir CSV
+  if (lv && (!D.live_info || lv.info.mtime >= D.live_info.mtime)) { D.live = lv.rows; D.live_info = lv.info; }
+  render();
+}
+function parseNum(s) { s = s.replace(/R\$|%|\u00a0|\s/g, ""); return s.includes(",") ? parseFloat(s.replace(/\./g, "").replace(",", ".")) : parseFloat(s); }
+function parseInvestir(txt) {
+  const L = txt.replace(/^\uFEFF/, "").split(/\r?\n/).filter(Boolean); L.shift();
+  return L.map(l => { const c = l.split(";"), name = c[0].trim(), p = name.split(" ");
+    const tipo = /^\d+$/.test(p.at(-1)) ? p.slice(0, -1).join(" ") : name, ry = c[1].trim();
+    return {name, key: tipo + "|" + c[4].trim(), yield_text: ry, rate: ry === "SELIC" ? null : parseNum(ry.split("+").pop()), min_invest: parseNum(c[2]), pu: parseNum(c[3]), venc: c[4].trim()}; });
+}
+async function uploadCsv(file) {
+  const rows = parseInvestir(await file.text());
+  if (!rows.length || rows.some(r => isNaN(r.pu))) { alert("rendimento-investir CSV 형식이 아닙니다."); return; }
+  const t = file.lastModified, info = {file: file.name, mtime: new Date(t - new Date(t).getTimezoneOffset() * 60000).toISOString().slice(0, 16)};
+  try { localStorage.setItem("pf32live", JSON.stringify({info, rows})); } catch (e) {}
+  await load();
+}
+
+// ---------- 파생 계산 ----------
+function model() {
+  const t = C.tracked, key = `${t.tipo}|${t.venc}`;
+  const hist = D.series[t.label] || [];
+  const last = hist.at(-1), prev = hist.at(-2);
+  const live = (D.live || []).find(b => b.key === key);
+  // 라이브(Investir CSV)가 있고 국채 CSV 최신일보다 새로우면 라이브 우선
+  const useLive = live && D.live_info && (!last || D.live_info.mtime.slice(0, 10) >= last[0]);
+  const price = useLive ? live.pu : last?.[2];
+  const ytm = useLive ? live.rate : last?.[1];
+  const before = useLive ? last : prev;
+  const fx = D.fx.latest ? D.fx.latest[1] : null;
+  const filled = C.stages.filter(s => s.filled);
+  const filledPct = filled.reduce((a, s) => a + s.pct, 0);
+  const avgOf = st => { const p = st.reduce((a, s) => a + s.pct, 0); return p && st.every(s => s.price > 0) ? st.reduce((a, s) => a + s.price * s.pct, 0) / p : null };
+  const next = C.stages.find(s => !s.filled);
+  const stagesAssumed = C.stages.map(s => ({...s}));
+  return {t, price, ytm, before, fx, useLive, live, last, filledPct, avg: avgOf(filled), avgAll: avgOf(C.stages), next, source: useLive ? "Investir CSV " + D.live_info.mtime.replace("T", " ") : "Tesouro Transparente " + (last ? brDate(last[0]) : "")};
+}
+const total = (ytmPct, fxFrom, fxTo) => ((1 + ytmPct / 100) * (fxTo / fxFrom) - 1) * 100;
+
+// ---------- 공용 컴포넌트 ----------
+function spark(vals, w = 560, h = 90, mark) {
+  if (vals.length < 2) return "<div class=note>데이터 부족</div>";
+  const mn = Math.min(...vals), mx = Math.max(...vals), sx = i => 4 + i * (w - 8) / (vals.length - 1), sy = v => h - 14 - (v - mn) / (mx - mn || 1) * (h - 28);
+  const pts = vals.map((v, i) => sx(i).toFixed(1) + "," + sy(v).toFixed(1)).join(" ");
+  const ml = mark != null ? `<line x1="0" x2="${w}" y1="${sy(mark)}" y2="${sy(mark)}" stroke="currentColor" stroke-dasharray="3 3" opacity=".6"/><text x="${w - 4}" y="${sy(mark) - 3}" text-anchor="end">${f2(mark)}</text>` : "";
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%" style="color:var(--ink)"><polyline points="${pts}" fill="none" stroke="currentColor" stroke-width="1.5"/>${ml}<text x="4" y="10">${f2(mx)}</text><text x="4" y="${h - 2}">${f2(mn)}</text></svg>`;
+}
+
+// ---------- 탭 ----------
+const V = {};
+V.overview = m => {
+  const rows = [C.tracked, ...C.peers].map(c => {
+    const key = `${c.tipo}|${c.venc}`, h = D.series[c.label] || [], l = (D.live || []).find(b => b.key === key);
+    const lastH = h.at(-1), prevH = h.at(-2);
+    const cur = (l && m.useLive) ? {d: "LIVE", y: l.rate, p: l.pu} : lastH ? {d: brDate(lastH[0]), y: lastH[1], p: lastH[2]} : null;
+    const bef = (l && m.useLive) ? lastH : prevH;
+    if (!cur) return `<tr><td>${c.label}</td><td colspan=4>데이터 없음</td></tr>`;
+    const dy = bef ? (cur.y - bef[1]) * 100 : null, dp = bef ? cur.p - bef[2] : null;
+    const main = c === C.tracked;
+    return `<tr ${main ? 'style="font-weight:700"' : ""}><td>${main ? '<span class="tag inv">PF32</span> ' : ""}${c.label}</td>
+      <td class=r>${bef ? (c.tipo.includes("Selic") ? "SELIC +" + f2(bef[1], 4) : f2(bef[1])) + "% / " + f2(bef[2]) : "—"}<br><small>${bef ? brDate(bef[0]) : ""}</small></td>
+      <td class=r>${c.tipo.includes("Selic") ? "SELIC +" + f2(cur.y, 4) : f2(cur.y, 2)}% / ${f2(cur.p)}<br><small>${cur.d}</small></td>
+      <td class=r>${dy == null ? "—" : (dy >= 0 ? "▲ +" : "▼ ") + f2(dy, 0) + "bp"}<br>${dp == null ? "" : (dp >= 0 ? "+" : "") + f2(dp)}</td></tr>`;
+  }).join("");
+  const hist = (D.series[C.tracked.label] || []).slice(-90);
+  const tr = hist.map(r => r[2]);
+  if (m.useLive) tr.push(m.price);
+  const down = (() => { let n = 0; for (let i = tr.length - 1; i > 0 && tr[i] < tr[i - 1]; i--) n++; return n; })();
+  return `<section><h2>01 최신변동 LATEST CHANGE</h2><div class=body>
+    <div class=grid>
+      <div class=card><small>${C.tracked.label} 현재가 (BRL)</small><b class=mono>${f2(m.price)}</b><div class=note>YTM ${f2(m.ytm)}% · ${m.source}</div></div>
+      <div class=card><small>BRL/KRW</small><b class=mono>${f2(m.fx)}</b><div class=note>${D.fx.latest ? brDate(D.fx.latest[0]) : ""} · Frankfurter(ECB)</div></div>
+      <div class=card><small>연속 하락 일수</small><b class=mono>${down}일</b><div class=note>가격 기준 (국채 CSV)</div></div>
+    </div>
+    <div class=tbl style="margin-top:10px"><table class=mono><thead><tr><th>종목</th><th class=r>직전</th><th class=r>최신</th><th class=r>변동</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div style="margin-top:10px">${spark(tr, 560, 90, C.stages.find(s => !s.filled && s.price > 0)?.price)}<div class=note>${C.tracked.label} 매수 단가(PU) 최근 ${tr.length}영업일 · 점선=다음 분할매수 지정가</div></div>
+  </div></section>`;
+};
+
+V.stages = m => {
+  const total_ = C.stages.reduce((a, s) => a + s.pct, 0);
+  const bar = C.stages.map(s => `<div class="${s.filled ? "f" : ""}" style="flex:${s.pct}"><small>${s.name} ${s.pct}%${s.filled ? " • FILLED" : ""}</small><b class=mono>${f2(s.price)}</b><small>${s.date || ""}</small></div>`).join("");
+  const hasPx = C.stages.some(s => s.price > 0), nx = m.next && m.next.price > 0;
+  const gap = nx ? m.price - m.next.price : null;
+  const reached = nx && m.price <= m.next.price;
+  const stopBuf = m.price - C.stop_price, up = (C.target_price / m.price - 1) * 100;
+  return `<section><h2>02 분할매수 ${C.stages.length}-STAGE — ${m.filledPct}% FILLED</h2><div class=body>
+    <div class=bar>${bar}</div>
+    ${!hasPx ? `<div class=warn>체결가·지정가가 비어 있습니다. <b>설정</b> 탭에서 입력하세요 (이 기기 브라우저에만 저장, 서버·GitHub로 전송되지 않음).</div>` : ""}
+    ${nx ? `<div class=warn class=mono>${reached ? "🔔 <b>체결 조건 충족</b>" : "대기"}: ${m.next.name} 지정가 ${f2(m.next.price)} · 현재 ${f2(m.price)} · ${reached ? "지정가 이하" : f2(gap) + " BRL 남음 (" + f2(gap / m.price * 100) + "%)"}</div>` : ""}
+    <div class=grid style="margin-top:10px">
+      <div class=card><small>현재 평균 (체결분)</small><b class=mono>${f2(m.avg)}</b><div class=note>체결 ${m.filledPct}% 가중평균 · ${m.avg ? "현재가 대비 " + pct((m.price / m.avg - 1) * 100) : "체결가 미입력"}</div></div>
+      <div class=card><small>${m.next ? "다음 체결 시 최종 평균" : "최종 평균"}</small><b class=mono>${f2(m.avgAll)}</b><div class=note>모든 단계가 지정가에 체결된다고 가정 (${total_}%)</div></div>
+      <div class=card><small>리스크 STOP</small><b class=mono>${C.stop_price > 0 ? f2(C.stop_price) : "—"}</b><div class=note>${C.stop_price > 0 ? "현재가 대비 버퍼 " + f2(stopBuf) + " BRL" : "미설정"} · FX ${C.stop_fx} 이탈 시 정리 검토${m.fx ? " (현재 " + f2(m.fx) + ")" : ""}</div></div>
+      <div class=card><small>수익 TARGET</small><b class=mono>${C.target_price > 0 ? f2(C.target_price) : "—"}</b><div class=note>${C.target_price > 0 ? "현재가 대비 " + pct(up) : "미설정"}</div></div>
+    </div>
+    <div class=note>※ 평균 체결가는 설정의 체결가 × 비중으로 직접 계산합니다.</div>
+  </div></section>`;
+};
+
+V.fx = m => {
+  const s = D.fx.series.map(r => r[1]), lo = C.fx_range.low, hi = C.fx_range.high;
+  const pos = Math.max(0, Math.min(100, (m.fx - lo) / (hi - lo) * 100));
+  const rows = [...new Set([...C.extra_fx_rows, +m.fx.toFixed(2)])].sort((a, b) => a - b).map(x => {
+    const chg = (x / m.fx - 1) * 100, tot = total(m.ytm, m.fx, x), cur = Math.abs(x - m.fx) < 0.01;
+    return `<tr ${cur ? 'style="font-weight:700"' : ""}><td class=r>${f2(x)}</td><td class=r>${pct(chg, 1)}</td><td class=r>${f2(m.ytm)}%</td><td class=r>${pct(tot, 1)}</td><td>${cur ? "현재 (베이스)" : ""}</td></tr>`;
+  }).join("");
+  return `<section><h2>03 환율 BRL/KRW — ${lo}–${hi} RANGE</h2><div class=body>
+    <div class=mono>현재 <b>${f2(m.fx)}</b> (${D.fx.latest ? brDate(D.fx.latest[0]) : ""}) · 10년 최저 ${f2(Math.min(...s))} / 최고 ${f2(Math.max(...s))}</div>
+    <div class=rng><i style="left:${pos}%"></i><em style="left:0">${lo}</em><em style="left:100%">${hi}</em><em style="left:${pos}%;top:-20px">▼ ${f2(m.fx)}</em></div>
+    <div style="margin-top:22px">${spark(s.slice(-260), 560, 90)}<div class=note>최근 데이터 추이 (ECB 기준, 주말·휴일 제외)</div></div>
+    <div class=tbl><table class=mono><thead><tr><th class=r>BRL/KRW</th><th class=r>FX</th><th class=r>YTM</th><th class=r>총수익</th><th>비고</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class=note>총수익 = (1+YTM) × (1+FX변동) − 1 · YTM은 현재 ${C.tracked.label} 수익률 ${f2(m.ytm)}% 적용</div>
+  </div></section>`;
+};
+
+function scen(m) {
+  const b = C.braz2034_ytm;
+  const rows = C.scenarios.map(s => {
+    const t = total(m.ytm, m.fx, s.fx), p55 = (t + b) / 2;
+    return {...s, fxchg: (s.fx / m.fx - 1) * 100, t, p55};
+  });
+  const w = rows.reduce((a, r) => a + r.prob, 0);
+  return {rows, ev: rows.reduce((a, r) => a + r.prob * r.t, 0) / w, ev55: rows.reduce((a, r) => a + r.prob * r.p55, 0) / w, base55: (m.ytm + b) / 2, w};
+}
+V.scen = m => {
+  const s = scen(m);
+  return `<section><h2>04 대선시나리오 ELECTION 2026 — BASE YTM ${f2(m.ytm)}%</h2><div class="body tbl"><table class=mono>
+    <thead><tr><th>시나리오</th><th class=r>확률</th><th class=r>BRL/KRW</th><th class=r>FX 변동</th><th class=r>PF32 총수익</th><th class=r>5:5 수익</th></tr></thead><tbody>
+    ${s.rows.map(r => `<tr><td>${r.name}</td><td class=r>${r.prob}%</td><td class=r>${f2(r.fx)}</td><td class=r>${pct(r.fxchg, 1)}</td><td class=r>${pct(r.t, 1)}</td><td class=r>${pct(r.p55, 2)}</td></tr>`).join("")}
+    <tr style="font-weight:700"><td>EV 기대수익</td><td class=r>${s.w}%</td><td></td><td></td><td class=r>${pct(s.ev, 1)}</td><td class=r>${pct(s.ev55, 1)}</td></tr></tbody></table>
+    <div class=note>확률 합이 ${s.w}% 입니다${s.w !== 100 ? " — 가중평균으로 정규화했습니다." : "."} 확률·환율 가정은 설정 탭에서 바꿀 수 있습니다.</div></div></section>`;
+};
+V.port = m => {
+  const s = scen(m), b = C.braz2034_ytm, lula = s.rows[0];
+  return `<section><h2>05 분산포트폴리오 5:5 — PF32 50% + USD BRAZ 2034 50%</h2><div class=body>
+    <div class=grid>
+      <div class=card><small>PF32 50% — BRL 채권</small><b class=mono>${f2(m.ytm)}%</b><div class=note>${f2(m.price)} BRL ≈ ${m.fx ? f2(m.price * m.fx / 1000, 1) : "—"}천원 (BRL/KRW ${f2(m.fx)})</div></div>
+      <div class=card><small>USD BRAZ 2034 50%</small><b class=mono>${f2(b)}%</b><div class=note>설정값(수동). USD 채권 · 환헤지 역할</div></div>
+      <div class=card><small>AVG YIELD</small><b class=mono>${f2(s.base55)}%</b><div class=note>(${f2(m.ytm)} + ${f2(b)}) / 2</div></div>
+      ${lula ? `<div class=card><small>${lula.name} 시 5:5</small><b class=mono>${pct(lula.p55, 2)}</b><div class=note>PF32 단독 ${pct(lula.t, 1)} 대비 방어</div></div>` : ""}
+    </div>
+    <div class=note>5:5 수익 = (PF32 총수익 + BRAZ YTM) / 2 로 단순화. BRAZ의 달러 환효과는 포함하지 않습니다.</div></div></section>`;
+};
+
+let bondQ = "";
+V.bonds = m => {
+  const hasLive = D.live && D.live.length;
+  const rows = hasLive ? D.live.map(b => ({n: b.name, y: b.yield_text, p: b.pu, v: b.venc, mi: b.min_invest}))
+    : D.bonds.map(b => ({n: b.tipo + " " + b.venc.slice(-4), y: f2(b.taxa_compra) + "%", p: b.pu_compra, v: b.venc, mi: null}));
+  const q = bondQ.toLowerCase();
+  const fil = rows.filter(r => !q || (r.n + r.y + r.v).toLowerCase().includes(q));
+  return `<section><h2>06 국채 전체 — ${hasLive ? "Investir CSV " + D.live_info.mtime.replace("T", " ") : "Tesouro Transparente 최신"}</h2><div class=body>
+    <input id=q placeholder="검색 (예: Prefixado, IPCA, 2032)" value="${bondQ}" oninput="bondQ=this.value;render(true)">
+    <div class=tbl style="margin-top:8px"><table class=mono><thead><tr><th>종목</th><th>수익률</th><th class=r>단가 PU</th><th class=r>최소투자</th><th>만기</th></tr></thead><tbody>
+    ${fil.map(r => `<tr><td>${r.n}</td><td>${r.y}</td><td class=r>${f2(r.p)}</td><td class=r>${r.mi != null ? f2(r.mi) : "—"}</td><td>${r.v}</td></tr>`).join("")}</tbody></table></div></div></section>`;
+};
+
+V.settings = m => {
+  const st = C.stages.map((s, i) => `<tr><td>${s.name}</td><td><input type=number step=any data-k="stages.${i}.pct" value="${s.pct}"></td><td><input type=number step=any data-k="stages.${i}.price" value="${s.price}"></td><td><input data-k="stages.${i}.date" value="${s.date || ""}"></td><td><input type=checkbox data-k="stages.${i}.filled" ${s.filled ? "checked" : ""}></td></tr>`).join("");
+  const sc = C.scenarios.map((s, i) => `<tr><td><input data-k="scenarios.${i}.name" value="${s.name}"></td><td><input type=number data-k="scenarios.${i}.prob" value="${s.prob}"></td><td><input type=number step=any data-k="scenarios.${i}.fx" value="${s.fx}"></td></tr>`).join("");
+  return `<section><h2>설정 (이 기기 브라우저에 저장)</h2><div class=body>
+    <div class=tbl><table><thead><tr><th>단계</th><th>비중%</th><th>지정가/체결가</th><th>날짜</th><th>체결</th></tr></thead><tbody>${st}</tbody></table></div>
+    <div class=kv style="margin:10px 0"><label>STOP 가격</label><input type=number step=any data-k="stop_price" value="${C.stop_price}">
+      <label>STOP 환율</label><input type=number step=any data-k="stop_fx" value="${C.stop_fx}">
+      <label>익절 TARGET</label><input type=number step=any data-k="target_price" value="${C.target_price}">
+      <label>BRAZ 2034 YTM %</label><input type=number step=any data-k="braz2034_ytm" value="${C.braz2034_ytm}"></div>
+    <div class=tbl><table><thead><tr><th>시나리오</th><th>확률%</th><th>BRL/KRW</th></tr></thead><tbody>${sc}</tbody></table></div>
+    <p><button class=pri onclick="saveCfg()">저장</button> <span id=saved class=note></span></p>
+    <div class=note>데이터: 환율=Frankfurter(ECB) · 국채=Tesouro Transparente(영업일 기준, 1~2일 지연) · 라이브=${C.downloads_glob} 중 가장 최근 파일. 국채·환율 데이터는 서버가 매일 자동 갱신합니다. 라이브 가격은 상단 📂 CSV로 rendimento-investir 파일을 올리면 반영됩니다.</div>
+  </div></section>`;
+};
+
+async function saveCfg() {
+  document.querySelectorAll("[data-k]").forEach(el => {
+    const path = el.dataset.k.split("."); let o = C;
+    path.slice(0, -1).forEach(p => o = o[p]);
+    const k = path.at(-1), v = el.type === "checkbox" ? el.checked : el.type === "number" ? parseFloat(el.value) : el.value;
+    o[k] = v;
+  });
+  try { localStorage.setItem("pf32cfg", JSON.stringify(C)); } catch (e) {}
+  if (LOCAL) await fetch("/api/config", {method: "POST", body: JSON.stringify(C)}).catch(() => {});
+  $("#saved").textContent = "저장됨 ✓"; setTimeout(() => render(), 600);
+}
+
+function render(keepFocus) {
+  $("#nav").innerHTML = TABS.map(([k, n]) => `<button class="${k === tab ? "on" : ""}" onclick="tab='${k}';localStorage.setItem('tab',tab);render()">${n}</button>`).join("");
+  const m = model();
+  $("#meta").textContent = `${D.generated.replace("T", " ")} 업데이트 · ${C.tracked.label} ${f2(m.price)} / ${f2(m.ytm)}% · BRL/KRW ${f2(m.fx)}` +
+    (D.status.treasury_csv !== "ok" ? " · ⚠ 국채 CSV 부분" : "");
+  $("#app").innerHTML = V[tab](m);
+  if (keepFocus) { const q = $("#q"); if (q) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); } }
+}
+
+$("#btnCsv").onclick = () => $("#csvFile").click();
+$("#csvFile").onchange = e => e.target.files[0] && uploadCsv(e.target.files[0]);
+if (!LOCAL) $("#btnUpdate").textContent = "⟳ 새로고침";
+$("#btnUpdate").onclick = async () => {
+  if (!LOCAL) { await load(); return; }   // 정적 배포: 서버가 매일 data.json 을 갱신, 여기선 다시 읽기만
+  const b = $("#btnUpdate"); b.disabled = true; b.textContent = "업데이트 중… (국채 CSV는 수 분 소요)";
+  $("#log").classList.remove("hidden");
+  await fetch("/api/update", {method: "POST"});
+  const t = setInterval(async () => {
+    const s = await fetch("/api/status").then(r => r.json());
+    $("#log").textContent = s.log;
+    if (!s.running) { clearInterval(t); b.disabled = false; b.textContent = "⟳ 지금 업데이트"; await load(); }
+  }, 2000);
+};
+
+if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0) navigator.serviceWorker.register('sw.js').catch(() => {});
+load().catch(e => { $("#app").innerHTML = `<section><div class=body>data/data.json 이 없습니다. <b>python3 update.py</b> 를 먼저 실행하거나 '지금 업데이트'를 누르세요.<br><small>${e}</small></div></section>`; });
+</script>
+</body>
+</html>
