@@ -123,7 +123,9 @@ function timesPanel(m) {
   const li = D.live_info, last = (D.series[C.tracked.label] || []).at(-1);
   const row = (a, b, c) => `<tr><td>${a}</td><td class=mono>${b}</td><td><small>${c}</small></td></tr>`;
   const old = li && (Date.now() - new Date(li.mtime).getTime()) > 24 * 36e5;
-  return `<details style="margin-top:10px" open><summary><b>데이터 시각 (한국 시간) — 서로 다른 시각을 구분</b></summary>
+  const btn = `<button class=noprint style="margin-top:10px" onclick="showTimes=!showTimes;render()">🕒 데이터 시각 ${showTimes ? "닫기 ▲" : "보기 ▼"}</button>`;
+  if (!showTimes) return btn;
+  return `${btn}<div style="margin-top:6px"><b>데이터 시각 (한국 시간) — 서로 다른 시각을 구분</b>
     <div class=tbl><table><tbody>
     ${row("자동 갱신 실행", kst(D.generated) + (hasTz(D.generated) ? "" : " ※"), "서버(Mac 07:00 / GitHub 07:30 KST)가 이 데이터를 만든 시각" + (hasTz(D.generated) ? "" : " · ※ 시간대 정보 없는 옛 데이터(다음 갱신부터 정확히 표기)"))}
     ${row("환율 기준일", D.fx.latest ? brDate(D.fx.latest[0]) : "—", "ECB 영업일 기준값 · 실행 시각과 무관(주말·휴일엔 전 영업일)")}
@@ -131,8 +133,9 @@ function timesPanel(m) {
     ${li ? row("Investir CSV 파일 작성", li.mtime.replace("T", " ") + " <small>(" + ageTxt(li.mtime) + ")</small>" + (old ? " ⚠" : ""), "내가 내려받아 저장한 <b>파일의 수정 시각</b>" + (old ? " · 24시간 넘은 파일" : "")) : row("Investir CSV", "없음", "LIVE 가격 없음 → 국채 CSV 값 표시")}
     ${li ? row("CSV 앱 반영", li.uploaded ? "올림 " + li.uploaded.replace("T", " ") : li.picked ? "자동 반영 " + kst(li.picked) : "—", li.uploaded ? "이 기기에서 [📂 CSV]로 올린 시각 (자동 갱신 시각과 무관, 언제든 가능)" : "자동 갱신이 파일을 집어간 시각") : ""}
     ${li ? row("LIVE 사용", m.useLive ? "사용 중" : "미사용", m.useLive ? "CSV 파일 날짜 ≥ 국채 CSV 최신일 → LIVE 값 우선" : "국채 CSV가 더 최신 → 국채 CSV 값 표시") : ""}
-    </tbody></table></div></details>`;
+    </tbody></table></div></div>`;
 }
+let showTimes = false;   // 시각 표는 필요할 때만 펼침
 
 // ---------- 파생 계산 ----------
 function model() {
