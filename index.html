@@ -128,6 +128,50 @@ function model() {
 }
 const total = (ytmPct, fxFrom, fxTo) => ((1 + ytmPct / 100) * (fxTo / fxFrom) - 1) * 100;
 
+// ---------- 실질수익률 (인플레 제거, 피셔 방정식) ----------
+const real = (nomPct, inflPct) => ((1 + nomPct / 100) / (1 + inflPct / 100) - 1) * 100;
+const INF = () => Object.assign({kr: 2.0, us: 2.5, br_manual: 0, usdkrw_assume: 0}, C.infl || {});
+// 만기까지 연평균 IPCA 기대: BCB Focus 연도별 중앙값을 기간(연 단위) 가중 기하평균. 자료가 끝난 연도는 마지막 값 유지
+function inflBR(now = new Date()) {
+  const man = INF().br_manual;
+  if (man > 0) return {v: man, src: "수동 입력"};
+  const by = D.infl && D.infl.br && D.infl.br.by_year;
+  if (!by) return {v: 4.0, src: "자료 없음 → 기본 4.0%"};
+  const [d, mo, y] = C.tracked.venc.split("/").map(Number), end = new Date(y, mo - 1, d);
+  const yrs = Object.keys(by).map(Number).sort((a, b) => a - b), lastV = by[yrs.at(-1)];
+  let g = 1, T = 0;
+  for (let yy = now.getFullYear(); yy <= end.getFullYear(); yy++) {
+    const a = Math.max(now, new Date(yy, 0, 1)), b = Math.min(end, new Date(yy + 1, 0, 1)), f = (b - a) / (365.25 * 864e5);
+    if (f <= 0) continue;
+    g *= Math.pow(1 + (by[yy] ?? lastV) / 100, f); T += f;
+  }
+  return {v: T > 0 ? (Math.pow(g, 1 / T) - 1) * 100 : lastV, src: `BCB Focus(${D.infl.br.asof}) · 만기 ${C.tracked.venc}까지 연평균`};
+}
+// 환율 시나리오 x(BRL/KRW)에서의 총수익: 원화 기준, 달러 기준(USD/KRW 는 가정값 또는 현재 유지)
+function views(m, x) {
+  const inf = INF(), usd = D.fx_usd && D.fx_usd.latest ? D.fx_usd.latest[1] : null;
+  const usdkrwNow = usd ? m.fx / usd : null, usdkrw = inf.usdkrw_assume > 0 ? inf.usdkrw_assume : usdkrwNow;
+  const krw = total(m.ytm, m.fx, x);
+  const usdT = usd ? ((1 + m.ytm / 100) * (x / m.fx) * (usdkrwNow / usdkrw) - 1) * 100 : null;
+  return {krw, krwReal: real(krw, inf.kr), usd: usdT, usdReal: usdT == null ? null : real(usdT, inf.us), usdkrwNow, usdkrw};
+}
+// 실질수익 0%가 되는 BRL/KRW (원화·달러 기준) — 이 아래로 환율이 내리면 물가를 감안한 구매력이 줄어듦
+function breakeven(m) {
+  const inf = INF(), v = views(m, m.fx);
+  return {krw: m.fx * (1 + inf.kr / 100) / (1 + m.ytm / 100),
+          usd: v.usdkrwNow ? m.fx * (1 + inf.us / 100) / (1 + m.ytm / 100) * v.usdkrw / v.usdkrwNow : null};
+}
+function realPanel(m) {
+  const inf = INF(), br = inflBR(), v = views(m, m.fx), be = breakeven(m);
+  const row = (name, nom, pi, note) => `<tr><td>${name}</td><td class=r>${pct(nom, 2)}</td><td class=r>${f2(pi)}%</td><td class=r style="font-weight:700">${pct(real(nom, pi), 2)}</td><td><small>${note}</small></td></tr>`;
+  return `<div class=tbl><table class=mono><thead><tr><th>기준 통화</th><th class=r>명목 YTM</th><th class=r>물가(연)</th><th class=r>실질 수익</th><th>물가 가정</th></tr></thead><tbody>
+    ${row("BRL 헤알", m.ytm, br.v, "IPCA 기대 · " + br.src)}
+    ${row("KRW 원 (환율 불변)", v.krw, inf.kr, "한국 물가 " + f2(inf.kr) + "% (설정값)")}
+    ${v.usd == null ? "" : row("USD 달러 (환율 불변)", v.usd, inf.us, "미국 물가 " + f2(inf.us) + "% (설정값)")}</tbody></table></div>
+    <div class=note>실질 = (1+명목) ÷ (1+물가) − 1 · 명목 YTM ${f2(m.ytm)}%는 1년 기준 연율. <b>원화 기준 실질 0% 손익분기 BRL/KRW ≈ ${f2(be.krw)}</b> (현재 ${f2(m.fx)}, ${pct((be.krw / m.fx - 1) * 100, 1)})${be.usd ? ` · 달러 기준 ≈ ${f2(be.usd)}` : ""} — 이보다 환율이 내리면 물가를 뺀 구매력이 줄어듭니다.
+    ${v.usdkrwNow ? ` 달러 기준은 USD/KRW ${f2(v.usdkrw)}${INF().usdkrw_assume > 0 ? "(가정)" : "(현재 " + f2(v.usdkrwNow) + " 유지)"}로 계산.` : ""} 한국·미국 물가는 직접 입력하는 가정값입니다(설정 탭).</div>`;
+}
+
 // ---------- 공용 컴포넌트 ----------
 function spark(vals, w = 560, h = 90, mark) {
   if (vals.length < 2) return "<div class=note>데이터 부족</div>";
@@ -162,6 +206,7 @@ V.overview = m => {
       <div class=card><small>${C.tracked.label} 현재가 (BRL)</small><b class=mono>${f2(m.price)}</b><div class=note>YTM ${f2(m.ytm)}% · ${m.source}</div></div>
       <div class=card><small>BRL/KRW</small><b class=mono>${f2(m.fx)}</b><div class=note>${D.fx.latest ? brDate(D.fx.latest[0]) : ""} · Frankfurter(ECB)</div></div>
       <div class=card><small>연속 하락 일수</small><b class=mono>${down}일</b><div class=note>가격 기준 (국채 CSV)</div></div>
+      <div class=card><small>실질 YTM (BRL, 인플레 제거)</small><b class=mono>${pct(real(m.ytm, inflBR().v), 2)}</b><div class=note>명목 ${f2(m.ytm)}% ÷ IPCA 기대 ${f2(inflBR().v)}% · 원화·달러 기준은 03 환율</div></div>
     </div>
     <div class=tbl style="margin-top:10px"><table class=mono><thead><tr><th>종목</th><th class=r>직전</th><th class=r>최신</th><th class=r>변동</th></tr></thead><tbody>${rows}</tbody></table></div>
     <div style="margin-top:10px">${spark(tr, 560, 90, C.stages.find(s => !s.filled && s.price > 0)?.price)}<div class=note>${C.tracked.label} 매수 단가(PU) 최근 ${tr.length}영업일 · 점선=다음 분할매수 지정가</div></div>
@@ -193,15 +238,16 @@ V.fx = m => {
   const s = D.fx.series.map(r => r[1]), lo = C.fx_range.low, hi = C.fx_range.high;
   const pos = Math.max(0, Math.min(100, (m.fx - lo) / (hi - lo) * 100));
   const rows = [...new Set([...C.extra_fx_rows, +m.fx.toFixed(2)])].sort((a, b) => a - b).map(x => {
-    const chg = (x / m.fx - 1) * 100, tot = total(m.ytm, m.fx, x), cur = Math.abs(x - m.fx) < 0.01;
-    return `<tr ${cur ? 'style="font-weight:700"' : ""}><td class=r>${f2(x)}</td><td class=r>${pct(chg, 1)}</td><td class=r>${f2(m.ytm)}%</td><td class=r>${pct(tot, 1)}</td><td>${cur ? "현재 (베이스)" : ""}</td></tr>`;
+    const chg = (x / m.fx - 1) * 100, tot = total(m.ytm, m.fx, x), cur = Math.abs(x - m.fx) < 0.01, v = views(m, x);
+    return `<tr ${cur ? 'style="font-weight:700"' : ""}><td class=r>${f2(x)}</td><td class=r>${pct(chg, 1)}</td><td class=r>${f2(m.ytm)}%</td><td class=r>${pct(tot, 1)}</td><td class=r>${pct(v.krwReal, 1)}</td><td class=r>${v.usd == null ? "—" : pct(v.usd, 1)}</td><td class=r>${v.usdReal == null ? "—" : pct(v.usdReal, 1)}</td><td>${cur ? "현재 (베이스)" : ""}</td></tr>`;
   }).join("");
   return `<section><h2>03 환율 BRL/KRW — ${lo}–${hi} RANGE</h2><div class=body>
     <div class=mono>현재 <b>${f2(m.fx)}</b> (${D.fx.latest ? brDate(D.fx.latest[0]) : ""}) · 10년 최저 ${f2(Math.min(...s))} / 최고 ${f2(Math.max(...s))}</div>
     <div class=rng><i style="left:${pos}%"></i><em style="left:0">${lo}</em><em style="left:100%">${hi}</em><em style="left:${pos}%;top:-20px">▼ ${f2(m.fx)}</em></div>
+    <div style="margin-top:14px"><b>실질수익률 (인플레 제거)</b>${realPanel(m)}</div>
     <div style="margin-top:22px">${spark(s.slice(-260), 560, 90)}<div class=note>최근 데이터 추이 (ECB 기준, 주말·휴일 제외)</div></div>
-    <div class=tbl><table class=mono><thead><tr><th class=r>BRL/KRW</th><th class=r>FX</th><th class=r>YTM</th><th class=r>총수익</th><th>비고</th></tr></thead><tbody>${rows}</tbody></table></div>
-    <div class=note>총수익 = (1+YTM) × (1+FX변동) − 1 · YTM은 현재 ${C.tracked.label} 수익률 ${f2(m.ytm)}% 적용</div>
+    <div class=tbl><table class=mono><thead><tr><th class=r>BRL/KRW</th><th class=r>FX</th><th class=r>YTM</th><th class=r>총수익(원)</th><th class=r>실질(원)</th><th class=r>총수익($)</th><th class=r>실질($)</th><th>비고</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class=note>총수익 = (1+YTM) × (1+FX변동) − 1 · 실질 = (1+총수익) ÷ (1+해당국 물가) − 1 (원: 한국, 달러: 미국 물가 가정) · YTM은 현재 ${C.tracked.label} 수익률 ${f2(m.ytm)}% 적용</div>
   </div></section>`;
 };
 
@@ -217,9 +263,9 @@ function scen(m) {
 V.scen = m => {
   const s = scen(m);
   return `<section><h2>04 대선시나리오 ELECTION 2026 — BASE YTM ${f2(m.ytm)}%</h2><div class="body tbl"><table class=mono>
-    <thead><tr><th>시나리오</th><th class=r>확률</th><th class=r>BRL/KRW</th><th class=r>FX 변동</th><th class=r>PF32 총수익</th><th class=r>5:5 수익</th></tr></thead><tbody>
-    ${s.rows.map(r => `<tr><td>${r.name}</td><td class=r>${r.prob}%</td><td class=r>${f2(r.fx)}</td><td class=r>${pct(r.fxchg, 1)}</td><td class=r>${pct(r.t, 1)}</td><td class=r>${pct(r.p55, 2)}</td></tr>`).join("")}
-    <tr style="font-weight:700"><td>EV 기대수익</td><td class=r>${s.w}%</td><td></td><td></td><td class=r>${pct(s.ev, 1)}</td><td class=r>${pct(s.ev55, 1)}</td></tr></tbody></table>
+    <thead><tr><th>시나리오</th><th class=r>확률</th><th class=r>BRL/KRW</th><th class=r>FX 변동</th><th class=r>PF32 총수익</th><th class=r>실질(원)</th><th class=r>5:5 수익</th></tr></thead><tbody>
+    ${s.rows.map(r => `<tr><td>${r.name}</td><td class=r>${r.prob}%</td><td class=r>${f2(r.fx)}</td><td class=r>${pct(r.fxchg, 1)}</td><td class=r>${pct(r.t, 1)}</td><td class=r>${pct(real(r.t, INF().kr), 1)}</td><td class=r>${pct(r.p55, 2)}</td></tr>`).join("")}
+    <tr style="font-weight:700"><td>EV 기대수익</td><td class=r>${s.w}%</td><td></td><td></td><td class=r>${pct(s.ev, 1)}</td><td class=r>${pct(real(s.ev, INF().kr), 1)}</td><td class=r>${pct(s.ev55, 1)}</td></tr></tbody></table>
     <div class=note>확률 합이 ${s.w}% 입니다${s.w !== 100 ? " — 가중평균으로 정규화했습니다." : "."} 확률·환율 가정은 설정 탭에서 바꿀 수 있습니다.</div></div></section>`;
 };
 V.port = m => {
@@ -256,6 +302,10 @@ V.settings = m => {
       <label>STOP 환율</label><input type=number step=any data-k="stop_fx" value="${C.stop_fx}">
       <label>익절 TARGET</label><input type=number step=any data-k="target_price" value="${C.target_price}">
       <label>BRAZ 2034 YTM %</label><input type=number step=any data-k="braz2034_ytm" value="${C.braz2034_ytm}"></div>
+    <div class=kv style="margin:10px 0"><label>한국 물가 %(연)</label><input type=number step=any data-k="infl.kr" value="${INF().kr}">
+      <label>미국 물가 %(연)</label><input type=number step=any data-k="infl.us" value="${INF().us}">
+      <label>브라질 IPCA %(0=Focus 자동)</label><input type=number step=any data-k="infl.br_manual" value="${INF().br_manual}">
+      <label>USD/KRW 가정(0=현재 유지)</label><input type=number step=any data-k="infl.usdkrw_assume" value="${INF().usdkrw_assume}"></div>
     <div class=tbl><table><thead><tr><th>시나리오</th><th>확률%</th><th>BRL/KRW</th></tr></thead><tbody>${sc}</tbody></table></div>
     <p><button class=pri onclick="saveCfg()">저장</button> <span id=saved class=note></span></p>
     <p><button onclick="exportCfg()">📋 설정 복사</button> <button onclick="importCfg()">📥 설정 붙여넣기</button> <span class=note>다른 기기(폰)로 옮길 때: 한 기기에서 복사 → 메신저 '나에게 보내기' 등으로 전달 → 다른 기기에서 붙여넣기. 설정은 서버·GitHub에 올라가지 않고 각 기기 브라우저에만 저장됩니다.</span></p>
@@ -263,7 +313,7 @@ V.settings = m => {
   </div></section>`;
 };
 
-const CFG_KEYS = ["stages", "stop_price", "stop_fx", "target_price", "braz2034_ytm", "scenarios", "extra_fx_rows", "fx_range"];
+const CFG_KEYS = ["stages", "stop_price", "stop_fx", "target_price", "braz2034_ytm", "scenarios", "extra_fx_rows", "fx_range", "infl"];
 async function exportCfg() {
   const o = {}; CFG_KEYS.forEach(k => { if (C[k] !== undefined) o[k] = C[k]; });
   const t = JSON.stringify(o);
@@ -280,6 +330,7 @@ function importCfg() {
 }
 
 async function saveCfg() {
+  if (!C.infl) C.infl = {};
   document.querySelectorAll("[data-k]").forEach(el => {
     const path = el.dataset.k.split("."); let o = C;
     path.slice(0, -1).forEach(p => o = o[p]);

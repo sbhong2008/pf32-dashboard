@@ -12,7 +12,11 @@ CFG = json.loads((ROOT / "config.json").read_text(encoding="utf-8"))
 
 TT_URL = ("https://www.tesourotransparente.gov.br/ckan/dataset/df56aa42-484a-4a59-8184-7676580c81e3/"
           "resource/796d2059-14e9-44e3-80c9-2d9e30b405c1/download/PrecoTaxaTesouroDireto.csv")
-FX_URL = "https://api.frankfurter.dev/v1/{start}..?base=BRL&symbols=KRW"
+FX_URL = "https://api.frankfurter.dev/v1/{start}..?base=BRL&symbols=KRW,USD"
+FOCUS_URL = ("https://olinda.bcb.gov.br/olinda/servico/Expectativas/versao/v1/odata/ExpectativasMercadoAnuais"
+             "?$top=60&$filter=Indicador%20eq%20'IPCA'%20and%20baseCalculo%20eq%200&$orderby=Data%20desc"
+             "&$format=json&$select=Data,DataReferencia,Mediana,numeroRespondentes")
+FX_USD = []  # (date, BRL→USD) — update_fx 가 채움
 UA = {"User-Agent": "Mozilla/5.0 pf32-app"}
 
 
@@ -37,10 +41,23 @@ def update_fx():
     with urllib.request.urlopen(req, timeout=60) as r:
         j = json.load(r)
     rows = sorted((d, v["KRW"]) for d, v in j["rates"].items())
+    FX_USD[:] = sorted((d, v["USD"]) for d, v in j["rates"].items() if "USD" in v)
     with open(DATA / "fx_brlkrw.csv", "w", newline="") as f:
         w = csv.writer(f); w.writerow(["date", "brl_krw"]); w.writerows(rows)
     log(f"FX 저장: {len(rows)}행, 최신 {rows[-1]}")
     return rows
+
+
+def update_infl():
+    """브라질 시장 IPCA 기대치(BCB Focus, 연도별 중앙값). 한국·미국 물가는 키 없이 받을 수 있는 소스가 없어 설정값 사용."""
+    req = urllib.request.Request(FOCUS_URL, headers=UA)
+    with urllib.request.urlopen(req, timeout=60) as r:
+        v = json.load(r)["value"]
+    d0 = v[0]["Data"]
+    by_year = {x["DataReferencia"]: x["Mediana"] for x in v if x["Data"] == d0}
+    if not by_year: raise ValueError("Focus 응답 비어 있음")
+    log(f"IPCA 기대(Focus {d0}):", by_year)
+    return {"asof": d0, "by_year": by_year, "source": "BCB Focus 연도별 중앙값"}
 
 
 # ---------------------------------------------------------------- Treasury (Tesouro Transparente)
@@ -124,6 +141,15 @@ def main():
         fx = [tuple(r) for r in list(csv.reader(open(p)))[1:]] if p.exists() else []
         fx = [(d, float(v)) for d, v in fx]
 
+    prev = {}
+    try: prev = json.loads((DATA / "data.json").read_text(encoding="utf-8"))
+    except Exception: pass
+    fx_usd = ({"latest": FX_USD[-1], "series": FX_USD[-400:]} if FX_USD else prev.get("fx_usd"))
+    if status["fx"] == "ok" and not FX_USD: status["fx_usd"] = "empty"
+    try: infl = {"br": update_infl()}; status["infl"] = "ok"
+    except Exception as e:
+        log("IPCA 기대 실패:", e); status["infl"] = f"error: {e}"; infl = prev.get("infl")
+
     hist = {}
     try:
         p = download_treasury()
@@ -154,7 +180,7 @@ def main():
     out = {"generated": datetime.now().isoformat(timespec="seconds"), "status": status,
            "live": live, "live_info": live_info, "bonds": sorted(bonds, key=lambda b: (b["tipo"], b["venc"][-4:])),
            "series": series,
-           "fx": {"latest": fx[-1] if fx else None, "series": fx}}
+           "fx": {"latest": fx[-1] if fx else None, "series": fx}, "fx_usd": fx_usd, "infl": infl}
     (DATA / "data.json").write_text(json.dumps(out, ensure_ascii=False), encoding="utf-8")
     log("data.json 생성 완료", status)
 

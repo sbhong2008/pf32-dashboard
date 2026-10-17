@@ -75,5 +75,11 @@
   ],
   "braz2034_ytm": 6.48,
   "downloads_glob": "~/Downloads/rendimento-investir*.csv",
-  "history_days": 400
+  "history_days": 400,
+  "infl": {
+    "kr": 2.0,
+    "us": 2.5,
+    "br_manual": 0,
+    "usdkrw_assume": 0
+  }
 }
