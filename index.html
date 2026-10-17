@@ -161,14 +161,21 @@ function breakeven(m) {
   return {krw: m.fx * (1 + inf.kr / 100) / (1 + m.ytm / 100),
           usd: v.usdkrwNow ? m.fx * (1 + inf.us / 100) / (1 + m.ytm / 100) * v.usdkrw / v.usdkrwNow : null};
 }
+// 직전 영업일(국채 CSV 기준) 명목 YTM 대비 변동. 물가 기대는 동일하다고 보고 실질 변동을 계산
+const dayChg = (m, nowNom, piPct, prevNom) => {
+  if (prevNom == null || !m.before) return null;
+  const d = (real(nowNom, piPct) - real(prevNom, piPct)) * 100;   // bp
+  return {bp: d, txt: (d >= 0 ? "▲ +" : "▼ ") + f2(d, 1) + "bp", date: brDate(m.before[0])};
+};
 function realPanel(m) {
   const inf = INF(), br = inflBR(), v = views(m, m.fx), be = breakeven(m);
-  const row = (name, nom, pi, note) => `<tr><td>${name}</td><td class=r>${pct(nom, 2)}</td><td class=r>${f2(pi)}%</td><td class=r style="font-weight:700">${pct(real(nom, pi), 2)}</td><td><small>${note}</small></td></tr>`;
-  return `<div class=tbl><table class=mono><thead><tr><th>기준 통화</th><th class=r>명목 YTM</th><th class=r>물가(연)</th><th class=r>실질 수익</th><th>물가 가정</th></tr></thead><tbody>
+  const pv = m.before ? m.before[1] : null;   // 직전 영업일 명목 YTM (환율 불변 가정이므로 원·달러 행도 같은 YTM 기준)
+  const row = (name, nom, pi, note) => { const c = dayChg(m, nom, pi, pv); return `<tr><td>${name}</td><td class=r>${pct(nom, 2)}</td><td class=r>${f2(pi)}%</td><td class=r style="font-weight:700">${pct(real(nom, pi), 2)}</td><td class=r>${c ? c.txt : "—"}</td><td><small>${note}</small></td></tr>`; };
+  return `<div class=tbl><table class=mono><thead><tr><th>기준 통화</th><th class=r>명목 YTM</th><th class=r>물가(연)</th><th class=r>실질 수익</th><th class=r>전일 대비</th><th>물가 가정</th></tr></thead><tbody>
     ${row("BRL 헤알", m.ytm, br.v, "IPCA 기대 · " + br.src)}
     ${row("KRW 원 (환율 불변)", v.krw, inf.kr, "한국 물가 " + f2(inf.kr) + "% (설정값)")}
     ${v.usd == null ? "" : row("USD 달러 (환율 불변)", v.usd, inf.us, "미국 물가 " + f2(inf.us) + "% (설정값)")}</tbody></table></div>
-    <div class=note>실질 = (1+명목) ÷ (1+물가) − 1 · 명목 YTM ${f2(m.ytm)}%는 1년 기준 연율. <b>원화 기준 실질 0% 손익분기 BRL/KRW ≈ ${f2(be.krw)}</b> (현재 ${f2(m.fx)}, ${pct((be.krw / m.fx - 1) * 100, 1)})${be.usd ? ` · 달러 기준 ≈ ${f2(be.usd)}` : ""} — 이보다 환율이 내리면 물가를 뺀 구매력이 줄어듭니다.
+    <div class=note>실질 = (1+명목) ÷ (1+물가) − 1 · 명목 YTM ${f2(m.ytm)}%는 1년 기준 연율 · 전일 대비는 ${m.before ? brDate(m.before[0]) : "직전"} 대비(물가 기대는 동일 가정). <b>원화 기준 실질 0% 손익분기 BRL/KRW ≈ ${f2(be.krw)}</b> (현재 ${f2(m.fx)}, ${pct((be.krw / m.fx - 1) * 100, 1)})${be.usd ? ` · 달러 기준 ≈ ${f2(be.usd)}` : ""} — 이보다 환율이 내리면 물가를 뺀 구매력이 줄어듭니다.
     ${v.usdkrwNow ? ` 달러 기준은 USD/KRW ${f2(v.usdkrw)}${INF().usdkrw_assume > 0 ? "(가정)" : "(현재 " + f2(v.usdkrwNow) + " 유지)"}로 계산.` : ""} 한국·미국 물가는 직접 입력하는 가정값입니다(설정 탭).</div>`;
 }
 
@@ -206,7 +213,7 @@ V.overview = m => {
       <div class=card><small>${C.tracked.label} 현재가 (BRL)</small><b class=mono>${f2(m.price)}</b><div class=note>YTM ${f2(m.ytm)}% · ${m.source}</div></div>
       <div class=card><small>BRL/KRW</small><b class=mono>${f2(m.fx)}</b><div class=note>${D.fx.latest ? brDate(D.fx.latest[0]) : ""} · Frankfurter(ECB)</div></div>
       <div class=card><small>연속 하락 일수</small><b class=mono>${down}일</b><div class=note>가격 기준 (국채 CSV)</div></div>
-      <div class=card><small>실질 YTM (BRL, 인플레 제거)</small><b class=mono>${pct(real(m.ytm, inflBR().v), 2)}</b><div class=note>명목 ${f2(m.ytm)}% ÷ IPCA 기대 ${f2(inflBR().v)}% · 원화·달러 기준은 03 환율</div></div>
+      <div class=card><small>실질 YTM (BRL, 인플레 제거)</small><b class=mono>${pct(real(m.ytm, inflBR().v), 2)}</b><div class=note>${(() => { const c = dayChg(m, m.ytm, inflBR().v, m.before ? m.before[1] : null); return c ? `<span style="font-weight:700;font-size:14px">${c.txt}</span> 전일(${c.date}) 대비 · 직전 ${pct(real(m.before[1], inflBR().v), 2)}<br>` : ""; })()}명목 ${f2(m.ytm)}% ÷ IPCA 기대 ${f2(inflBR().v)}% · 원화·달러 기준은 03 환율</div></div>
     </div>
     <div class=tbl style="margin-top:10px"><table class=mono><thead><tr><th>종목</th><th class=r>직전</th><th class=r>최신</th><th class=r>변동</th></tr></thead><tbody>${rows}</tbody></table></div>
     <div style="margin-top:10px">${spark(tr, 560, 90, C.stages.find(s => !s.filled && s.price > 0)?.price)}<div class=note>${C.tracked.label} 매수 단가(PU) 최근 ${tr.length}영업일 · 점선=다음 분할매수 지정가</div></div>
