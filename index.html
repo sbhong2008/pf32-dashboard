@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#000000">
+<meta name="robots" content="noindex,nofollow">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <title>PF32 Dashboard</title>
@@ -257,9 +258,26 @@ V.settings = m => {
       <label>BRAZ 2034 YTM %</label><input type=number step=any data-k="braz2034_ytm" value="${C.braz2034_ytm}"></div>
     <div class=tbl><table><thead><tr><th>시나리오</th><th>확률%</th><th>BRL/KRW</th></tr></thead><tbody>${sc}</tbody></table></div>
     <p><button class=pri onclick="saveCfg()">저장</button> <span id=saved class=note></span></p>
+    <p><button onclick="exportCfg()">📋 설정 복사</button> <button onclick="importCfg()">📥 설정 붙여넣기</button> <span class=note>다른 기기(폰)로 옮길 때: 한 기기에서 복사 → 메신저 '나에게 보내기' 등으로 전달 → 다른 기기에서 붙여넣기. 설정은 서버·GitHub에 올라가지 않고 각 기기 브라우저에만 저장됩니다.</span></p>
     <div class=note>데이터: 환율=Frankfurter(ECB) · 국채=Tesouro Transparente(영업일 기준, 1~2일 지연) · 라이브=${C.downloads_glob} 중 가장 최근 파일. 국채·환율 데이터는 서버가 매일 자동 갱신합니다. 라이브 가격은 상단 📂 CSV로 rendimento-investir 파일을 올리면 반영됩니다.</div>
   </div></section>`;
 };
+
+const CFG_KEYS = ["stages", "stop_price", "stop_fx", "target_price", "braz2034_ytm", "scenarios", "extra_fx_rows", "fx_range"];
+async function exportCfg() {
+  const o = {}; CFG_KEYS.forEach(k => { if (C[k] !== undefined) o[k] = C[k]; });
+  const t = JSON.stringify(o);
+  try { await navigator.clipboard.writeText(t); $("#saved").textContent = "복사됨 ✓ (개인 설정 포함 — 전달 후 메신저에서 삭제하세요)"; }
+  catch (e) { prompt("아래 내용을 복사하세요", t); }
+}
+function importCfg() {
+  const t = prompt("복사한 설정(JSON)을 붙여넣으세요"); if (!t) return;
+  let o; try { o = JSON.parse(t); } catch (e) { alert("형식이 올바르지 않습니다"); return; }
+  if (!o || typeof o !== "object" || Array.isArray(o)) { alert("형식이 올바르지 않습니다"); return; }
+  CFG_KEYS.forEach(k => { if (o[k] !== undefined) C[k] = o[k]; });
+  try { localStorage.setItem("pf32cfg", JSON.stringify(C)); } catch (e) {}
+  render(); setTimeout(() => { const s = $("#saved"); if (s) s.textContent = "가져옴 ✓"; }, 50);
+}
 
 async function saveCfg() {
   document.querySelectorAll("[data-k]").forEach(el => {
@@ -273,12 +291,23 @@ async function saveCfg() {
   $("#saved").textContent = "저장됨 ✓"; setTimeout(() => render(), 600);
 }
 
+// 자동 갱신이 멈췄거나 실패했는지 화면에서 바로 알 수 있게 경고 (ECB 휴일·주말 4일까지는 정상으로 본다)
+function staleWarn() {
+  const days = s => Math.floor((Date.now() - new Date(s).getTime()) / 864e5);
+  let w = "";
+  if (D.status && D.status.fx !== "ok") w += " · ⚠ 환율 갱신 실패(이전 값 표시)";
+  const fxd = D.fx && D.fx.latest && D.fx.latest[0];
+  if (fxd && days(fxd) > 4) w += ` · ⚠ 환율 ${days(fxd)}일 지연`;
+  if (days(D.generated) >= 3) w += ` · ⚠ 자동 갱신 ${days(D.generated)}일째 멈춤`;
+  return w;
+}
+
 function render(keepFocus) {
   $("#nav").innerHTML = TABS.map(([k, n]) => `<button class="${k === tab ? "on" : ""}" onclick="tab='${k}';localStorage.setItem('tab',tab);render()">${n}</button>`).join("");
   const on = $("#nav .on"); if (on) on.scrollIntoView({inline: "center", block: "nearest"});
   const m = model();
   $("#meta").textContent = `${D.generated.replace("T", " ")} 업데이트 · ${C.tracked.label} ${f2(m.price)} / ${f2(m.ytm)}% · BRL/KRW ${f2(m.fx)}` +
-    (D.status.treasury_csv !== "ok" ? " · ⚠ 국채 CSV 부분" : "");
+    (D.status.treasury_csv !== "ok" ? " · ⚠ 국채 CSV 부분" : "") + staleWarn();
   $("#app").innerHTML = V[tab](m);
   if (keepFocus) { const q = $("#q"); if (q) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); } }
 }
