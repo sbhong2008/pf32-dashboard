@@ -14,8 +14,8 @@ TT_URL = ("https://www.tesourotransparente.gov.br/ckan/dataset/df56aa42-484a-4a5
           "resource/796d2059-14e9-44e3-80c9-2d9e30b405c1/download/PrecoTaxaTesouroDireto.csv")
 FX_URL = "https://api.frankfurter.dev/v1/{start}..?base=BRL&symbols=KRW,USD"
 FOCUS_URL = ("https://olinda.bcb.gov.br/olinda/servico/Expectativas/versao/v1/odata/ExpectativasMercadoAnuais"
-             "?$top=60&$filter=Indicador%20eq%20'IPCA'%20and%20baseCalculo%20eq%200&$orderby=Data%20desc"
-             "&$format=json&$select=Data,DataReferencia,Mediana,numeroRespondentes")
+             "?$top=4000&$filter=Indicador%20eq%20'IPCA'%20and%20baseCalculo%20eq%200%20and%20Data%20ge%20'{start}'"
+             "&$orderby=Data%20desc&$format=json&$select=Data,DataReferencia,Mediana")
 FX_USD = []  # (date, BRL→USD) — update_fx 가 채움
 UA = {"User-Agent": "Mozilla/5.0 pf32-app"}
 
@@ -50,14 +50,18 @@ def update_fx():
 
 def update_infl():
     """브라질 시장 IPCA 기대치(BCB Focus, 연도별 중앙값). 한국·미국 물가는 키 없이 받을 수 있는 소스가 없어 설정값 사용."""
-    req = urllib.request.Request(FOCUS_URL, headers=UA)
-    with urllib.request.urlopen(req, timeout=60) as r:
+    start = (date.today() - timedelta(days=400)).isoformat()
+    req = urllib.request.Request(FOCUS_URL.format(start=start), headers=UA)
+    with urllib.request.urlopen(req, timeout=90) as r:
         v = json.load(r)["value"]
-    d0 = v[0]["Data"]
-    by_year = {x["DataReferencia"]: x["Mediana"] for x in v if x["Data"] == d0}
-    if not by_year: raise ValueError("Focus 응답 비어 있음")
-    log(f"IPCA 기대(Focus {d0}):", by_year)
-    return {"asof": d0, "by_year": by_year, "source": "BCB Focus 연도별 중앙값"}
+    if not v: raise ValueError("Focus 응답 비어 있음")
+    history = {}
+    for x in v: history.setdefault(x["Data"], {})[x["DataReferencia"]] = x["Mediana"]
+    d0 = max(history)
+    by_year = history[d0]
+    log(f"IPCA 기대(Focus {d0}):", by_year, f"· 이력 {len(history)}일")
+    # history: 날짜별 연도별 중앙값 → 화면이 과거 시점마다 그날의 물가 기대로 실질수익률 곡선을 그림
+    return {"asof": d0, "by_year": by_year, "history": dict(sorted(history.items())), "source": "BCB Focus 연도별 중앙값"}
 
 
 # ---------------------------------------------------------------- Treasury (Tesouro Transparente)

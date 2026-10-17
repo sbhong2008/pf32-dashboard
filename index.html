@@ -132,10 +132,10 @@ const total = (ytmPct, fxFrom, fxTo) => ((1 + ytmPct / 100) * (fxTo / fxFrom) - 
 const real = (nomPct, inflPct) => ((1 + nomPct / 100) / (1 + inflPct / 100) - 1) * 100;
 const INF = () => Object.assign({kr: 2.0, us: 2.5, br_manual: 0, usdkrw_assume: 0}, C.infl || {});
 // 만기까지 연평균 IPCA 기대: BCB Focus 연도별 중앙값을 기간(연 단위) 가중 기하평균. 자료가 끝난 연도는 마지막 값 유지
-function inflBR(now = new Date()) {
+function inflBR(now = new Date(), byOverride) {
   const man = INF().br_manual;
   if (man > 0) return {v: man, src: "수동 입력"};
-  const by = D.infl && D.infl.br && D.infl.br.by_year;
+  const by = byOverride || (D.infl && D.infl.br && D.infl.br.by_year);
   if (!by) return {v: 4.0, src: "자료 없음 → 기본 4.0%"};
   const [d, mo, y] = C.tracked.venc.split("/").map(Number), end = new Date(y, mo - 1, d);
   const yrs = Object.keys(by).map(Number).sort((a, b) => a - b), lastV = by[yrs.at(-1)];
@@ -145,7 +145,15 @@ function inflBR(now = new Date()) {
     if (f <= 0) continue;
     g *= Math.pow(1 + (by[yy] ?? lastV) / 100, f); T += f;
   }
-  return {v: T > 0 ? (Math.pow(g, 1 / T) - 1) * 100 : lastV, src: `BCB Focus(${D.infl.br.asof}) · 만기 ${C.tracked.venc}까지 연평균`};
+  return {v: T > 0 ? (Math.pow(g, 1 / T) - 1) * 100 : lastV, src: `BCB Focus(${D.infl && D.infl.br ? D.infl.br.asof : "-"}) · 만기 ${C.tracked.venc}까지 연평균`};
+}
+// 과거 날짜 d 시점의 만기까지 연평균 IPCA 기대 (그날 이전 가장 최근 Focus 스냅샷 사용, 없으면 가장 오래된 것)
+function inflAt(d) {
+  const H = D.infl && D.infl.br && D.infl.br.history; if (!H) return inflBR().v;
+  const ks = Object.keys(H).sort(); let k = ks[0];
+  for (const x of ks) { if (x <= d) k = x; else break; }
+  const [yy, mm, dd] = d.split("-").map(Number);
+  return inflBR(new Date(yy, mm - 1, dd), H[k]).v;
 }
 // 환율 시나리오 x(BRL/KRW)에서의 총수익: 원화 기준, 달러 기준(USD/KRW 는 가정값 또는 현재 유지)
 function views(m, x) {
@@ -188,6 +196,26 @@ function spark(vals, w = 560, h = 90, mark) {
   return `<svg viewBox="0 0 ${w} ${h}" width="100%" style="color:var(--ink)"><polyline points="${pts}" fill="none" stroke="currentColor" stroke-width="1.5"/>${ml}<text x="4" y="10">${f2(mx)}</text><text x="4" y="${h - 2}">${f2(mn)}</text></svg>`;
 }
 
+// 가격(PU, 좌축)과 수익률(명목·실질, 우축)을 한 차트에 겹쳐 그림
+function dualChart(pu, nom, rl, w = 560, h = 190, mark) {
+  const n = pu.length; if (n < 2) return "<div class=note>데이터 부족</div>";
+  const sx = i => 36 + i * (w - 72) / (n - 1);
+  const pmn = Math.min(...pu), pmx = Math.max(...pu), ymn = Math.min(...rl), ymx = Math.max(...nom);
+  const sp = v => h - 16 - (v - pmn) / (pmx - pmn || 1) * (h - 30), sy = v => h - 16 - (v - ymn) / (ymx - ymn || 1) * (h - 30);
+  const line = (arr, f, extra) => `<polyline points="${arr.map((v, i) => sx(i).toFixed(1) + "," + f(v).toFixed(1)).join(" ")}" fill="none" ${extra}/>`;
+  const ml = mark != null && mark >= pmn && mark <= pmx ? `<line x1="36" x2="${w - 36}" y1="${sp(mark)}" y2="${sp(mark)}" stroke="currentColor" stroke-dasharray="1 4" opacity=".7"/><text x="38" y="${sp(mark) - 3}" font-size="9">지정가 ${f2(mark)}</text>` : "";
+  const lastR = rl.at(-1), lastP = pu.at(-1);
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%" style="color:var(--ink);font-family:inherit;font-size:11px">
+    ${line(pu, sp, 'stroke="currentColor" stroke-width="1.6"')}
+    ${line(nom, sy, 'stroke="currentColor" stroke-width="1" opacity=".38"')}
+    ${line(rl, sy, 'stroke="currentColor" stroke-width="1.6" stroke-dasharray="5 3"')}
+    ${ml}
+    <text x="2" y="10">${f2(pmx)}</text><text x="2" y="${h - 4}">${f2(pmn)}</text>
+    <text x="${w - 2}" y="10" text-anchor="end">${f2(ymx)}%</text><text x="${w - 2}" y="${h - 4}" text-anchor="end">${f2(ymn)}%</text>
+    <circle cx="${sx(n - 1)}" cy="${sp(lastP)}" r="2.6" fill="currentColor"/><circle cx="${sx(n - 1)}" cy="${sy(lastR)}" r="2.6" fill="none" stroke="currentColor" stroke-width="1.4"/>
+  </svg>`;
+}
+
 // ---------- 탭 ----------
 const V = {};
 V.overview = m => {
@@ -206,7 +234,8 @@ V.overview = m => {
   }).join("");
   const hist = (D.series[C.tracked.label] || []).slice(-90);
   const tr = hist.map(r => r[2]);
-  if (m.useLive) tr.push(m.price);
+  const nomS = hist.map(r => r[1]), rlS = hist.map(r => real(r[1], inflAt(r[0])));
+  if (m.useLive) { tr.push(m.price); nomS.push(m.ytm); rlS.push(real(m.ytm, inflAt(D.live_info.mtime.slice(0, 10)))); }
   const down = (() => { let n = 0; for (let i = tr.length - 1; i > 0 && tr[i] < tr[i - 1]; i--) n++; return n; })();
   return `<section><h2>01 최신변동 LATEST CHANGE</h2><div class=body>
     <div class=grid>
@@ -216,7 +245,8 @@ V.overview = m => {
       <div class=card><small>실질 YTM (BRL, 인플레 제거)</small><b class=mono>${pct(real(m.ytm, inflBR().v), 2)}</b><div class=note>${(() => { const c = dayChg(m, m.ytm, inflBR().v, m.before ? m.before[1] : null); return c ? `<span style="font-weight:700;font-size:14px">${c.txt}</span> 전일(${c.date}) 대비 · 직전 ${pct(real(m.before[1], inflBR().v), 2)}<br>` : ""; })()}명목 ${f2(m.ytm)}% ÷ IPCA 기대 ${f2(inflBR().v)}% · 원화·달러 기준은 03 환율</div></div>
     </div>
     <div class=tbl style="margin-top:10px"><table class=mono><thead><tr><th>종목</th><th class=r>직전</th><th class=r>최신</th><th class=r>변동</th></tr></thead><tbody>${rows}</tbody></table></div>
-    <div style="margin-top:10px">${spark(tr, 560, 90, C.stages.find(s => !s.filled && s.price > 0)?.price)}<div class=note>${C.tracked.label} 매수 단가(PU) 최근 ${tr.length}영업일 · 점선=다음 분할매수 지정가</div></div>
+    <div style="margin-top:10px">${dualChart(tr, nomS, rlS, 560, 190, C.stages.find(s => !s.filled && s.price > 0)?.price)}
+      <div class=note><svg width=28 height=8 style="vertical-align:middle"><line x1=0 x2=28 y1=4 y2=4 stroke=currentColor stroke-width=2  opacity=1/></svg> ${C.tracked.label} 매수 단가 PU (좌축) &nbsp; <svg width=28 height=8 style="vertical-align:middle"><line x1=0 x2=28 y1=4 y2=4 stroke=currentColor stroke-width=1.2  opacity=0.4/></svg> 명목 YTM (우축) &nbsp; <svg width=28 height=8 style="vertical-align:middle"><line x1=0 x2=28 y1=4 y2=4 stroke=currentColor stroke-width=2 stroke-dasharray="5 3" opacity=1/></svg> <b>실질 YTM</b> (우축, 각 날짜의 Focus IPCA 기대로 계산) · 최근 ${tr.length}영업일${C.stages.some(s => !s.filled && s.price > 0) ? " · 점선=다음 분할매수 지정가" : ""}</div></div>
   </div></section>`;
 };
 
