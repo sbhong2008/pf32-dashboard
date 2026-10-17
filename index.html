@@ -197,7 +197,8 @@ function spark(vals, w = 560, h = 90, mark) {
 }
 
 // 가격(PU, 좌축)과 수익률(명목·실질, 우축)을 한 차트에 겹쳐 그림
-function dualChart(pu, nom, rl, w = 560, h = 190, mark, dates) {
+let chartSeq = 0; const CH = {};
+function dualChart(pu, nom, rl, w = 560, h = 190, mark, dates, full) {
   const n = pu.length; if (n < 2) return "<div class=note>데이터 부족</div>";
   const M = 76, sx = i => M + i * (w - 2 * M) / (n - 1);   // 좌우 여백에 시작·끝 값 라벨을 넣는다
   const pmn = Math.min(...pu), pmx = Math.max(...pu), ymn = Math.min(...rl), ymx = Math.max(...nom);
@@ -210,7 +211,9 @@ function dualChart(pu, nom, rl, w = 560, h = 190, mark, dates) {
   const R = pack([{y: sp(pu[n - 1]), t: "PU " + f2(pu[n - 1])}, {y: sy(nom[n - 1]), t: "명목 " + f2(nom[n - 1]) + "%"}, {y: sy(rl[n - 1]), t: "실질 " + f2(rl[n - 1]) + "%"}]);
   const lab = (arr, x, anc) => arr.map(o => `<text x="${x}" y="${(o.y + 3).toFixed(1)}" text-anchor="${anc}" font-weight="700" font-size="10">${o.t}</text>`).join("");
   const dt = dates && dates.length === n ? `<text x="${M}" y="${h + 11}" text-anchor="middle">${dates[0]}</text><text x="${w - M}" y="${h + 11}" text-anchor="middle">${dates[n - 1]}</text>` : "";
-  return `<svg viewBox="0 0 ${w} ${h + (dt ? 14 : 0)}" width="100%" style="color:var(--ink);font-family:inherit;font-size:11px">
+  const id = "ch" + (++chartSeq);
+  CH[id] = {n, M, w, h, pmn, pmx, ymn, ymx, pu, nom, rl, full: full || dates || []};
+  return `<svg id="${id}" viewBox="0 0 ${w} ${h + (dt ? 14 : 0)}" width="100%" style="color:var(--ink);font-family:inherit;font-size:11px;touch-action:pan-y">
     ${line(pu, sp, 'stroke="currentColor" stroke-width="1.6"')}
     ${line(nom, sy, 'stroke="currentColor" stroke-width="1" opacity=".38"')}
     ${line(rl, sy, 'stroke="currentColor" stroke-width="1.6" stroke-dasharray="5 3"')}
@@ -218,8 +221,35 @@ function dualChart(pu, nom, rl, w = 560, h = 190, mark, dates) {
       .filter(([ls, , , cy]) => !ls.some(o => Math.abs(o.y + 3 - cy) < 11)).map(([, x, anc, cy, t]) => `<text x="${x}" y="${cy}" text-anchor="${anc}">${t}</text>`).join("")}</g>
     ${mk}${lab(L, M - 6, "end")}${lab(R, w - M + 6, "start")}${dt}
     <circle cx="${sx(0)}" cy="${sp(pu[0])}" r="2.2" fill="currentColor"/><circle cx="${sx(n - 1)}" cy="${sp(pu[n - 1])}" r="2.6" fill="currentColor"/><circle cx="${sx(n - 1)}" cy="${sy(rl[n - 1])}" r="2.6" fill="none" stroke="currentColor" stroke-width="1.4"/>
+    <g id="${id}c" visibility="hidden" pointer-events="none">
+      <line id="${id}l" y1="2" y2="${h - 12}" stroke="currentColor" stroke-width="1" opacity=".55"/>
+      <circle id="${id}p" r="3.4" fill="currentColor"/><circle id="${id}n" r="3" fill="var(--paper)" stroke="currentColor" opacity=".7"/><circle id="${id}r" r="3.4" fill="var(--paper)" stroke="currentColor" stroke-width="1.6"/>
+      <g id="${id}t"><rect id="${id}b" rx="2" fill="var(--paper)" stroke="currentColor" stroke-width="1"/>
+        <text id="${id}t0" font-weight="700" font-size="11"></text><text id="${id}t1" font-size="10.5"></text><text id="${id}t2" font-size="10.5"></text><text id="${id}t3" font-size="10.5" font-weight="700"></text></g></g>
+    <rect x="0" y="0" width="${w}" height="${h + (dt ? 14 : 0)}" fill="transparent" onpointermove="chartHover(event,'${id}')" onpointerdown="chartHover(event,'${id}')" onpointerleave="chartLeave('${id}')" onpointercancel="chartLeave('${id}')" style="cursor:crosshair"/>
   </svg>`;
 }
+
+// 마우스·터치 위치의 날짜와 세 곡선의 값을 표시
+const WD = ["일", "월", "화", "수", "목", "금", "토"];
+function chartHover(ev, id) {
+  const c = CH[id], svg = document.getElementById(id); if (!c || !svg) return;
+  const pt = svg.createSVGPoint(); pt.x = ev.clientX; pt.y = ev.clientY;
+  const p = pt.matrixTransform(svg.getScreenCTM().inverse());
+  const step = (c.w - 2 * c.M) / (c.n - 1), i = Math.max(0, Math.min(c.n - 1, Math.round((p.x - c.M) / step)));
+  const x = c.M + i * step, sp = v => c.h - 16 - (v - c.pmn) / (c.pmx - c.pmn || 1) * (c.h - 30), sy = v => c.h - 16 - (v - c.ymn) / (c.ymx - c.ymn || 1) * (c.h - 30);
+  const set = (k, a) => { const e = document.getElementById(id + k); Object.entries(a).forEach(([n, v]) => e.setAttribute(n, v)); return e; };
+  set("l", {x1: x, x2: x}); set("p", {cx: x, cy: sp(c.pu[i])}); set("n", {cx: x, cy: sy(c.nom[i])}); set("r", {cx: x, cy: sy(c.rl[i])});
+  const iso = (c.full[i] || "").match(/\d{2}\/\d{2}\/\d{4}/), d = iso ? iso[0].split("/").reverse().join("-") : null;
+  const wd = d ? " (" + WD[new Date(d + "T00:00:00").getDay()] + ")" : "";
+  const dRl = i > 0 ? (c.rl[i] - c.rl[i - 1]) * 100 : null;
+  const lines = [(c.full[i] || "") + wd, "PU " + f2(c.pu[i]), "명목 " + f2(c.nom[i]) + "%", "실질 " + f2(c.rl[i]) + "%" + (dRl == null ? "" : "  " + (dRl >= 0 ? "▲+" : "▼") + f2(dRl, 1) + "bp")];
+  const tw = Math.max(...lines.map(s => s.length)) * 6.4 + 14, th = 4 * 14 + 8, tx = x + 10 + tw > c.w ? x - 10 - tw : x + 10, ty = 6;
+  set("b", {x: tx, y: ty, width: tw, height: th});
+  lines.forEach((s, k) => { const e = set("t" + k, {x: tx + 7, y: ty + 16 + k * 14}); e.textContent = s; });
+  document.getElementById(id + "c").setAttribute("visibility", "visible");
+}
+function chartLeave(id) { const g = document.getElementById(id + "c"); if (g) g.setAttribute("visibility", "hidden"); }
 
 // ---------- 탭 ----------
 const V = {};
@@ -240,8 +270,8 @@ V.overview = m => {
   const hist = (D.series[C.tracked.label] || []).slice(-90);
   const tr = hist.map(r => r[2]);
   const nomS = hist.map(r => r[1]), rlS = hist.map(r => real(r[1], inflAt(r[0])));
-  const dts = hist.map(r => brDate(r[0]).slice(0, 5));
-  if (m.useLive) { tr.push(m.price); nomS.push(m.ytm); rlS.push(real(m.ytm, inflAt(D.live_info.mtime.slice(0, 10)))); dts.push("LIVE"); }
+  const dts = hist.map(r => brDate(r[0]).slice(0, 5)), fullD = hist.map(r => brDate(r[0]));
+  if (m.useLive) { tr.push(m.price); nomS.push(m.ytm); rlS.push(real(m.ytm, inflAt(D.live_info.mtime.slice(0, 10)))); dts.push("LIVE"); fullD.push("LIVE " + brDate(D.live_info.mtime.slice(0, 10))); }
   const down = (() => { let n = 0; for (let i = tr.length - 1; i > 0 && tr[i] < tr[i - 1]; i--) n++; return n; })();
   return `<section><h2>01 최신변동 LATEST CHANGE</h2><div class=body>
     <div class=grid>
@@ -251,7 +281,7 @@ V.overview = m => {
       <div class=card><small>실질 YTM (BRL, 인플레 제거)</small><b class=mono>${pct(real(m.ytm, inflBR().v), 2)}</b><div class=note>${(() => { const c = dayChg(m, m.ytm, inflBR().v, m.before ? m.before[1] : null); return c ? `<span style="font-weight:700;font-size:14px">${c.txt}</span> 전일(${c.date}) 대비 · 직전 ${pct(real(m.before[1], inflBR().v), 2)}<br>` : ""; })()}명목 ${f2(m.ytm)}% ÷ IPCA 기대 ${f2(inflBR().v)}% · 원화·달러 기준은 03 환율</div></div>
     </div>
     <div class=tbl style="margin-top:10px"><table class=mono><thead><tr><th>종목</th><th class=r>직전</th><th class=r>최신</th><th class=r>변동</th></tr></thead><tbody>${rows}</tbody></table></div>
-    <div style="margin-top:10px">${dualChart(tr, nomS, rlS, 560, 190, C.stages.find(s => !s.filled && s.price > 0)?.price, dts)}
+    <div style="margin-top:10px">${dualChart(tr, nomS, rlS, 560, 190, C.stages.find(s => !s.filled && s.price > 0)?.price, dts, fullD)}
       <div class=note><svg width=28 height=8 style="vertical-align:middle"><line x1=0 x2=28 y1=4 y2=4 stroke=currentColor stroke-width=2  opacity=1/></svg> ${C.tracked.label} 매수 단가 PU (좌축) &nbsp; <svg width=28 height=8 style="vertical-align:middle"><line x1=0 x2=28 y1=4 y2=4 stroke=currentColor stroke-width=1.2  opacity=0.4/></svg> 명목 YTM (우축) &nbsp; <svg width=28 height=8 style="vertical-align:middle"><line x1=0 x2=28 y1=4 y2=4 stroke=currentColor stroke-width=2 stroke-dasharray="5 3" opacity=1/></svg> <b>실질 YTM</b> (우축, 각 날짜의 Focus IPCA 기대로 계산) · 최근 ${tr.length}영업일${C.stages.some(s => !s.filled && s.price > 0) ? " · 점선=다음 분할매수 지정가" : ""}</div></div>
   </div></section>`;
 };
