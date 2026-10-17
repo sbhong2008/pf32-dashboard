@@ -102,9 +102,36 @@ function parseInvestir(txt) {
 async function uploadCsv(file) {
   const rows = parseInvestir(await file.text());
   if (!rows.length || rows.some(r => isNaN(r.pu))) { alert("rendimento-investir CSV 형식이 아닙니다."); return; }
-  const t = file.lastModified, info = {file: file.name, mtime: new Date(t - new Date(t).getTimezoneOffset() * 60000).toISOString().slice(0, 16)};
+  const t = file.lastModified, loc = d => new Date(d - new Date(d).getTimezoneOffset() * 60000).toISOString();
+  const info = {file: file.name, mtime: loc(t).slice(0, 16), uploaded: loc(Date.now()).slice(0, 16)};   // mtime=파일 수정 시각, uploaded=내가 이 기기에서 올린 시각
   try { localStorage.setItem("pf32live", JSON.stringify({info, rows})); } catch (e) {}
   await load();
+}
+
+// ---------- 시각 표기 (모두 한국 시간) ----------
+// 시간대(+09:00/Z 등)가 붙은 값은 KST로 변환, 붙지 않은 값(파일 수정 시각 등 이 기기 로컬)은 그대로 표시
+const hasTz = s => /([zZ]|[+-]\d{2}:?\d{2})$/.test(s || "");
+function kst(s) {
+  if (!s) return "—";
+  if (!hasTz(s)) return s.replace("T", " ").slice(0, 16) + (s.length > 16 ? "" : "");
+  const f = new Intl.DateTimeFormat("sv-SE", {timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit"});
+  return f.format(new Date(s)).replace(",", "");
+}
+const ageTxt = s => { if (!s) return ""; const ms = Date.now() - new Date(s).getTime(); if (isNaN(ms) || ms < 0) return ""; const h = ms / 36e5;
+  return h < 1 ? `${Math.max(1, Math.round(ms / 6e4))}분 전` : h < 48 ? `${Math.round(h)}시간 전` : `${Math.round(h / 24)}일 전`; };
+function timesPanel(m) {
+  const li = D.live_info, last = (D.series[C.tracked.label] || []).at(-1);
+  const row = (a, b, c) => `<tr><td>${a}</td><td class=mono>${b}</td><td><small>${c}</small></td></tr>`;
+  const old = li && (Date.now() - new Date(li.mtime).getTime()) > 24 * 36e5;
+  return `<details style="margin-top:10px" open><summary><b>데이터 시각 (한국 시간) — 서로 다른 시각을 구분</b></summary>
+    <div class=tbl><table><tbody>
+    ${row("자동 갱신 실행", kst(D.generated) + (hasTz(D.generated) ? "" : " ※"), "서버(Mac 07:00 / GitHub 07:30 KST)가 이 데이터를 만든 시각" + (hasTz(D.generated) ? "" : " · ※ 시간대 정보 없는 옛 데이터(다음 갱신부터 정확히 표기)"))}
+    ${row("환율 기준일", D.fx.latest ? brDate(D.fx.latest[0]) : "—", "ECB 영업일 기준값 · 실행 시각과 무관(주말·휴일엔 전 영업일)")}
+    ${row("국채 CSV 최신 거래일", last ? brDate(last[0]) : "—", "Tesouro Transparente 반영 지연(1~2영업일)")}
+    ${li ? row("Investir CSV 파일 작성", li.mtime.replace("T", " ") + " <small>(" + ageTxt(li.mtime) + ")</small>" + (old ? " ⚠" : ""), "내가 내려받아 저장한 <b>파일의 수정 시각</b>" + (old ? " · 24시간 넘은 파일" : "")) : row("Investir CSV", "없음", "LIVE 가격 없음 → 국채 CSV 값 표시")}
+    ${li ? row("CSV 앱 반영", li.uploaded ? "올림 " + li.uploaded.replace("T", " ") : li.picked ? "자동 반영 " + kst(li.picked) : "—", li.uploaded ? "이 기기에서 [📂 CSV]로 올린 시각 (자동 갱신 시각과 무관, 언제든 가능)" : "자동 갱신이 파일을 집어간 시각") : ""}
+    ${li ? row("LIVE 사용", m.useLive ? "사용 중" : "미사용", m.useLive ? "CSV 파일 날짜 ≥ 국채 CSV 최신일 → LIVE 값 우선" : "국채 CSV가 더 최신 → 국채 CSV 값 표시") : ""}
+    </tbody></table></div></details>`;
 }
 
 // ---------- 파생 계산 ----------
@@ -124,7 +151,7 @@ function model() {
   const avgOf = st => { const p = st.reduce((a, s) => a + s.pct, 0); return p && st.every(s => s.price > 0) ? st.reduce((a, s) => a + s.price * s.pct, 0) / p : null };
   const next = C.stages.find(s => !s.filled);
   const stagesAssumed = C.stages.map(s => ({...s}));
-  return {t, price, ytm, before, fx, useLive, live, last, filledPct, avg: avgOf(filled), avgAll: avgOf(C.stages), next, source: useLive ? "Investir CSV " + D.live_info.mtime.replace("T", " ") : "Tesouro Transparente " + (last ? brDate(last[0]) : "")};
+  return {t, price, ytm, before, fx, useLive, live, last, filledPct, avg: avgOf(filled), avgAll: avgOf(C.stages), next, source: useLive ? "Investir CSV 파일 " + D.live_info.mtime.replace("T", " ") : "Tesouro Transparente " + (last ? brDate(last[0]) : "")};
 }
 const total = (ytmPct, fxFrom, fxTo) => ((1 + ytmPct / 100) * (fxTo / fxFrom) - 1) * 100;
 
@@ -280,6 +307,7 @@ V.overview = m => {
       <div class=card><small>연속 하락 일수</small><b class=mono>${down}일</b><div class=note>가격 기준 (국채 CSV)</div></div>
       <div class=card><small>실질 YTM (BRL, 인플레 제거)</small><b class=mono>${pct(real(m.ytm, inflBR().v), 2)}</b><div class=note>${(() => { const c = dayChg(m, m.ytm, inflBR().v, m.before ? m.before[1] : null); return c ? `<span style="font-weight:700;font-size:14px">${c.txt}</span> 전일(${c.date}) 대비 · 직전 ${pct(real(m.before[1], inflBR().v), 2)}<br>` : ""; })()}명목 ${f2(m.ytm)}% ÷ IPCA 기대 ${f2(inflBR().v)}% · 원화·달러 기준은 03 환율</div></div>
     </div>
+    ${timesPanel(m)}
     <div class=tbl style="margin-top:10px"><table class=mono><thead><tr><th>종목</th><th class=r>직전</th><th class=r>최신</th><th class=r>변동</th></tr></thead><tbody>${rows}</tbody></table></div>
     <div style="margin-top:10px">${dualChart(tr, nomS, rlS, 560, 190, C.stages.find(s => !s.filled && s.price > 0)?.price, dts, fullD)}
       <div class=note><svg width=28 height=8 style="vertical-align:middle"><line x1=0 x2=28 y1=4 y2=4 stroke=currentColor stroke-width=2  opacity=1/></svg> ${C.tracked.label} 매수 단가 PU (좌축) &nbsp; <svg width=28 height=8 style="vertical-align:middle"><line x1=0 x2=28 y1=4 y2=4 stroke=currentColor stroke-width=1.2  opacity=0.4/></svg> 명목 YTM (우축) &nbsp; <svg width=28 height=8 style="vertical-align:middle"><line x1=0 x2=28 y1=4 y2=4 stroke=currentColor stroke-width=2 stroke-dasharray="5 3" opacity=1/></svg> <b>실질 YTM</b> (우축, 각 날짜의 Focus IPCA 기대로 계산) · 최근 ${tr.length}영업일${C.stages.some(s => !s.filled && s.price > 0) ? " · 점선=다음 분할매수 지정가" : ""}</div></div>
@@ -430,7 +458,7 @@ function render(keepFocus) {
   $("#nav").innerHTML = TABS.map(([k, n]) => `<button class="${k === tab ? "on" : ""}" onclick="tab='${k}';localStorage.setItem('tab',tab);render()">${n}</button>`).join("");
   const on = $("#nav .on"); if (on) on.scrollIntoView({inline: "center", block: "nearest"});
   const m = model();
-  $("#meta").textContent = `${D.generated.replace("T", " ")} 업데이트 · ${C.tracked.label} ${f2(m.price)} / ${f2(m.ytm)}% · BRL/KRW ${f2(m.fx)}` +
+  $("#meta").textContent = `자동갱신 ${kst(D.generated)}${D.live_info ? " · CSV파일 " + D.live_info.mtime.slice(5).replace("T", " ") : ""} · ${C.tracked.label} ${f2(m.price)} / ${f2(m.ytm)}% · BRL/KRW ${f2(m.fx)}` +
     (D.status.treasury_csv !== "ok" ? " · ⚠ 국채 CSV 부분" : "") + staleWarn();
   $("#app").innerHTML = V[tab](m);
   if (keepFocus) { const q = $("#q"); if (q) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); } }

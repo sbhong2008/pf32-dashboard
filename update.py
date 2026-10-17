@@ -169,7 +169,8 @@ def main():
     if ip:
         live = read_investir(ip)
         ts = datetime.fromtimestamp(os.path.getmtime(ip))
-        live_info = {"file": os.path.basename(ip), "mtime": ts.isoformat(timespec="minutes")}
+        live_info = {"file": os.path.basename(ip), "mtime": ts.isoformat(timespec="minutes"),   # 파일 수정 시각(이 기기 로컬)
+                     "picked": datetime.now().astimezone().isoformat(timespec="seconds")}   # 자동 갱신이 이 파일을 집어간 시각
         shutil.copy(ip, DATA / "snapshots" / f"rendimento-investir_{ts:%Y-%m-%d_%H%M}.csv")
         log(f"Investir 스냅샷: {live_info['file']} ({live_info['mtime']})")
 
@@ -181,7 +182,7 @@ def main():
               "pu_compra": v[2], "taxa_venda": v[3], "pu_venda": v[4]}
              for k, v in latest_hist.items() if v[0] >= (date.today() - timedelta(days=10)).isoformat()]
     # 이어받기 완료 전에도 사용자의 최신 스냅샷은 바로 반영
-    out = {"generated": datetime.now().isoformat(timespec="seconds"), "status": status,
+    out = {"generated": datetime.now().astimezone().isoformat(timespec="seconds"), "status": status,
            "live": live, "live_info": live_info, "bonds": sorted(bonds, key=lambda b: (b["tipo"], b["venc"][-4:])),
            "series": series,
            "fx": {"latest": fx[-1] if fx else None, "series": fx}, "fx_usd": fx_usd, "infl": infl}
