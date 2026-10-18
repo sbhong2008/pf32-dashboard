@@ -642,13 +642,19 @@ function staleWarn() {
 }
 
 function render(keepFocus) {
+  const sx = scrollX, sy = scrollY;
   $("#nav").innerHTML = TABS.map(([k, n]) => `<button class="${k === tab ? "on" : ""}" onclick="tab='${k}';localStorage.setItem('tab',tab);render()">${n}</button>`).join("");
-  const on = $("#nav .on"); if (on) on.scrollIntoView({inline: "center", block: "nearest"});
+  const on = $("#nav .on"); if (on && !keepFocus) on.scrollIntoView({inline: "center", block: "nearest"});
   const m = model();
   $("#meta").textContent = `자동갱신 ${kst(D.generated)}${D.live_info ? " · CSV파일 " + D.live_info.mtime.slice(5).replace("T", " ") : ""} · ${C.tracked.label} ${f2(m.price)} / ${f2(m.ytm)}% · BRL/KRW ${f2(m.fx)}` +
     (D.status.treasury_csv !== "ok" ? " · ⚠ 국채 CSV 부분" : "") + staleWarn();
+  const tl = keepFocus ? [...document.querySelectorAll("#app .tbl")].map(e => e.scrollLeft) : [];
   $("#app").innerHTML = V[tab](m);
-  if (keepFocus) { const q = $("#q"); if (q) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); } }
+  if (keepFocus) {
+    const q = $("#q"); if (q) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
+    document.querySelectorAll("#app .tbl").forEach((e, i) => { if (tl[i]) e.scrollLeft = tl[i]; });
+    scrollTo(sx, sy);   // 입력 수정 후 다시 그려도 화면 위치 유지
+  }
 }
 
 // 좌우 스와이프로 탭 이동 (가로 스크롤 가능한 표·입력칸 위에서는 무시)
