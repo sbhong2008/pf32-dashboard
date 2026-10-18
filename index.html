@@ -176,10 +176,10 @@ const INF = () => Object.assign({kr: 2.0, us: 2.5, br_manual: 0, usdkrw_assume: 
 const POL_DEF = {
   sel_now: 13.75, sel_spread: 0.0979, ipca_real: 6.83, ipca_venc: "15/08/2032", horizon_note: "10/25 결과 확인 후 매수 → 12개월 보유 후 매도",
   sc: [
-    {name: "S1 우파 승리 + 재정 신뢰 회복", side: "우파", prob: 31, dy: -60, sel: 12.3, ipca: 3.8, dr: -30, fx: 5, dy2: -10, dr2: -5, fx2: 1},
-    {name: "S2 우파 승리, 개혁 지연(이미 반영)", side: "우파", prob: 47, dy: 0, sel: 12.9, ipca: 4.3, dr: 0, fx: 0, dy2: 0, dr2: 0, fx2: 0},
-    {name: "S3 룰라 재선 + 재정 현상유지(2022형)", side: "룰라", prob: 15, dy: 150, sel: 13.4, ipca: 5.0, dr: 75, fx: -7, dy2: 0, dr2: 0, fx2: 0},
-    {name: "S4 룰라 재선 + 재정 악화(2024형)", side: "룰라", prob: 7, dy: 250, sel: 14.3, ipca: 6.5, dr: 125, fx: -12, dy2: 0, dr2: 0, fx2: 0}]
+    {name: "S1 우파 승리 + 재정 신뢰 회복", side: "우파", prob: 31, dy: -60, sel: 12.3, ipca: 3.8, dr: -30, fx: 5, dy2: -10, dr2: -5, fx2: 1, sp: -25},
+    {name: "S2 우파 승리, 개혁 지연(이미 반영)", side: "우파", prob: 47, dy: 0, sel: 12.9, ipca: 4.3, dr: 0, fx: 0, dy2: 0, dr2: 0, fx2: 0, sp: 0},
+    {name: "S3 룰라 재선 + 재정 현상유지(2022형)", side: "룰라", prob: 15, dy: 150, sel: 13.4, ipca: 5.0, dr: 75, fx: -7, dy2: 0, dr2: 0, fx2: 0, sp: 60},
+    {name: "S4 룰라 재선 + 재정 악화(2024형)", side: "룰라", prob: 7, dy: 250, sel: 14.3, ipca: 6.5, dr: 125, fx: -12, dy2: 0, dr2: 0, fx2: 0, sp: 120}]
 };
 const POL = () => { const c = C.pol || {}; return {...POL_DEF, ...c, sc: (c.sc && c.sc.length ? c.sc : POL_DEF.sc).map((s, i) => ({...POL_DEF.sc[i], ...s}))}; };
 function yearsTo(venc, now = new Date()) { const [d, m, y] = venc.split("/").map(Number); return Math.max(0.1, (new Date(y, m - 1, d) - now) / (365.25 * 864e5)); }
@@ -221,6 +221,35 @@ function polEdit(el) {
   render(true);
 }
 function polReset() { delete C.pol; try { localStorage.setItem("pf32cfg", JSON.stringify(C)); } catch (e) {} if (LOCAL) fetch("/api/config", {method: "POST", body: JSON.stringify(C)}).catch(() => {}); render(); }
+// ---------- 달러표시 브라질 채권 (수동 입력 시세, 설정 usd_bonds 로 덮어쓰기 가능) ----------
+const USD_ASOF = "10/14";
+const USD_DEF = [
+  {n: "Brazil 6.25% 2031", cpn: 6.25, mat: "2031.03.18", px: 101.67, ytm: 5.82, sp: 84, dur: 3.81},
+  {n: "Brazil 3.75% 2031", cpn: 3.75, mat: "2031.09.12", px: 90.97, ytm: 5.89, sp: 90, dur: 4.36},
+  {n: "Brazil 5.5% 2033", cpn: 5.5, mat: "2033.02.04", px: 95.61, ytm: 6.34, sp: 128, dur: 5.17},
+  {n: "Brazil 6% 2033", cpn: 6, mat: "2033.10.20", px: 97.97, ytm: 6.36, sp: 127, dur: 5.47},
+  {n: "Brazil 6.625% 2035", cpn: 6.625, mat: "2035.03.15", px: 99.60, ytm: 6.68, sp: 155, dur: 6.33}];
+let usdSel = 3;
+function usdSection(r, m) {
+  const L = C.usd_bonds && C.usd_bonds.length ? C.usd_bonds : USD_DEF, b = L[Math.min(usdSel, L.length - 1)], kr = INF().kr;
+  const usd = D.fx_usd && D.fx_usd.latest ? D.fx_usd.latest[1] : null, now = usd ? m.fx / usd : null, as = INF().usdkrw_assume;
+  const g = as > 0 && now ? (as / now - 1) * 100 : 0;
+  const rows = r.rows.map(x => {
+    const y = b.ytm + x.sp / 100, px = b.px * (1 - b.dur * x.sp / 10000), k = ((1 + y / 100) * (1 + g / 100) - 1) * 100, pf = x.krwP[0];
+    return {x, y, px, k, mix: (pf + k) / 2, be: ((1 + pf / 100) / (1 + y / 100) - 1) * 100};
+  });
+  const ev = f => rows.reduce((a, o) => a + o.x.w * f(o), 0);
+  return `<h3 style="margin:14px 0 4px;font-size:14px">달러표시 브라질 국채 (Global bond) — PF32와 비교 (시세 ${USD_ASOF} 기준·수동)</h3>
+    <div class=tbl><table class=mono><thead><tr><th>종목</th><th class=r>표면금리</th><th>만기</th><th class=r>가격</th><th class=r>만기수익률</th><th class=r>미 국채 대비<br>가산금리</th><th class=r>수정듀레이션</th></tr></thead><tbody>
+    ${L.map((o, i) => `<tr${i === usdSel ? ' style="font-weight:700"' : ""}><td>${o.n}</td><td class=r>${f2(o.cpn, 3)}%</td><td>${o.mat}</td><td class=r>${f2(o.px, 2)}</td><td class=r>${f2(o.ytm, 2)}%</td><td class=r>${f2(o.sp, 0)}bp</td><td class=r>${f2(o.dur, 2)}</td></tr>`).join("")}</tbody></table></div>
+    <div class=note>PF32(R$ 고정금리 ${f2(m.ytm)}%)와 달리 이 채권들은 <b>달러 수익률 ${f2(L[0].ytm, 1)}~${f2(L[L.length - 1].ytm, 1)}%</b>이고 환위험은 BRL/KRW가 아니라 <b>USD/KRW</b>입니다. 브라질 정치 충격이 와도 헤알 약세는 직접 맞지 않고 <b>가산금리 확대</b>(가정)만 반영됩니다. PF32는 헤알 약세 위험을 지는 대신 만기수익률이 이 종목보다 약 ${f2(m.ytm - b.ytm, 1)}%p 높습니다.</div>
+    <p class=noprint style="margin:2px 0 6px">${L.map((o, i) => `<button onclick="usdSel=${i};render(true)" ${i === usdSel ? 'style="font-weight:700;text-decoration:underline"' : ""}>${o.n.replace("Brazil ", "")}</button>`).join(" ")} <small>비교 대상: ${b.n}</small></p>
+    <div class=tbl><table class=mono><thead><tr><th>시나리오 (확인 후 매수)</th><th class=r>가산금리 변동</th><th class=r>진입 YTM($)</th><th class=r>예상 가격</th><th class=r>원화 12개월<br><small>${b.n.replace("Brazil ", "BRAZ ")}</small></th><th class=r>원화 12개월<br><small>PF32</small></th><th class=r>차이<br><small>BRAZ − PF32</small></th><th class=r>PF32와 동률인<br>USD/KRW 변동</th><th class=r>5:5 원화<br><small>PF32+BRAZ</small></th></tr></thead><tbody>
+    ${rows.map(o => `<tr><td style="white-space:normal">${o.x.name.split(" ")[0]} <small>${f2(o.x.w * 100, 0)}%</small></td><td class=r>${o.x.sp > 0 ? "+" : ""}${f2(o.x.sp, 0)}bp</td><td class=r>${f2(o.y, 2)}%</td><td class=r>${f2(o.px, 2)}</td><td class=r><b>${pct(o.k, 1)}</b></td><td class=r>${pct(o.x.krwP[0], 1)}</td><td class=r>${pct(o.k - o.x.krwP[0], 1)}</td><td class=r>${pct(o.be, 1)}</td><td class=r>${pct(o.mix, 1)}</td></tr>`).join("")}
+    <tr style="border-top:2px solid var(--ink)"><td><b>기대값 EV</b></td><td></td><td></td><td></td><td class=r><b>${pct(ev(o => o.k), 1)}</b></td><td class=r>${pct(ev(o => o.x.krwP[0]), 1)}</td><td class=r>${pct(ev(o => o.k - o.x.krwP[0]), 1)}</td><td></td><td class=r>${pct(ev(o => o.mix), 1)}</td></tr>
+    <tr><td>EV 실질(원)</td><td colspan=3></td><td class=r>${pct(real(ev(o => o.k), kr), 1)}</td><td class=r>${pct(real(ev(o => o.x.krwP[0]), kr), 1)}</td><td colspan=2></td><td class=r>${pct(real(ev(o => o.mix), kr), 1)}</td></tr></tbody></table></div>
+    <div class=note>계산: 진입 YTM($) = 현재 ${f2(b.ytm, 2)}% + 가산금리 변동(미 국채금리 변동 없음 가정) · 가격 = ${f2(b.px, 2)} × (1 − 듀레이션 ${f2(b.dur, 2)} × 변동) · 12개월 달러 수익 ≈ 진입 YTM(진입 후 추가 변동 없음) · 원화 = (1+달러 수익)×(1+USD/KRW 변동 ${f2(g, 1)}%${as > 0 ? "(설정 가정)" : "(변동 없음 가정, 설정 탭 USD/KRW 가정으로 변경)"}) − 1 · '동률 USD/KRW 변동'은 BRAZ 원화 수익이 PF32와 같아지는 달러 환율 변동(이보다 달러가 약해지면 PF32 우위). 가산금리 변동은 2018·2022·2024 반응을 참고한 <b>가정</b>이며 위 표에서 수정 가능. 가격·수익률은 직접 입력한 시세라 매수 전 증권사 호가로 확인하세요. 세금·수수료·환전비용 미반영.</div>`;
+}
 function polSection(m) {
   const r = polCalc(m), P = r.P, inp = (k, v, w = 68) => `<input type=number step=any data-k="${k}" value="${v}" style="width:${w}px;text-align:right" onchange="polEdit(this)">`;
   const names = ["PF32(고정)", "Selic 연동", "IPCA+ 2032"];
@@ -229,8 +258,8 @@ function polSection(m) {
   return `<section><h2>04-2 정치·재정 시나리오 비교 — PF32 vs Selic vs IPCA+</h2><div class=body>
     <div class=note>결선 <b>10/25 · 플라비우 볼소나루(우파) vs 룰라(좌파)</b> · 예측시장의 우파 승리 확률은 약 77~78%(10/16 보도) · 정부 재정: 총부채 GDP 대비 80%대 초반, 2026 기초수지 적자 전망 — <b>확률과 금리·환율 반응은 아래에서 직접 입력</b>하세요 (입력값은 이 기기에만 저장).</div>
     <div class=note><b>결과 확인 후 매수</b> 기준: 10/25 결과가 나온 뒤(약 1주 내) 매수해 12개월 보유 후 매도. 충격(금리·환율)은 <b>이미 매수가에 반영</b>되고, 손익은 <b>진입 금리의 이자 + 진입 후 추가 변동</b>으로 계산합니다.</div>
-    <div class=tbl style="margin-top:8px"><table class=mono><thead><tr><th>가정</th><th class=r>확률%</th><th class=r>직후 금리 변동 bp<br><small>= 진입 금리</small></th><th class=r>진입 후 추가 금리 bp</th><th class=r>평균 Selic %</th><th class=r>실제 IPCA %</th><th class=r>직후 실질금리 bp</th><th class=r>진입 후 추가 실질 bp</th><th class=r>직후 BRL/KRW %</th><th class=r>진입 후 BRL/KRW %</th></tr></thead><tbody>
-    ${P.sc.map((s, i) => `<tr><td style="white-space:normal;min-width:190px">${s.name}</td>${[["prob", 48], ["dy"], ["dy2"], ["sel"], ["ipca"], ["dr"], ["dr2"], ["fx"], ["fx2"]].map(([k, w]) => `<td class=r>${inp(`pol.sc.${i}.${k}`, s[k], w)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>
+    <div class=tbl style="margin-top:8px"><table class=mono><thead><tr><th>가정</th><th class=r>확률%</th><th class=r>직후 금리 변동 bp<br><small>= 진입 금리</small></th><th class=r>진입 후 추가 금리 bp</th><th class=r>평균 Selic %</th><th class=r>실제 IPCA %</th><th class=r>직후 실질금리 bp</th><th class=r>진입 후 추가 실질 bp</th><th class=r>직후 BRL/KRW %</th><th class=r>진입 후 BRL/KRW %</th><th class=r>BRAZ 달러채 가산금리 변동 bp</th></tr></thead><tbody>
+    ${P.sc.map((s, i) => `<tr><td style="white-space:normal;min-width:190px">${s.name}</td>${[["prob", 48], ["dy"], ["dy2"], ["sel"], ["ipca"], ["dr"], ["dr2"], ["fx"], ["fx2"], ["sp"]].map(([k, w]) => `<td class=r>${inp(`pol.sc.${i}.${k}`, s[k], w)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>
     <div class=note>확률 합 ${r.tw}%${r.tw !== 100 ? " → 정규화해 계산" : ""} · 룰라 승리 합계 ${f2(r.pLula, 0)}% · '직후' 값은 매수가에 이미 들어간 충격(매수 후 손익 아님), '진입 후' 값만 손익에 반영</div>
     <div class=tbl style="margin-top:8px"><table class=mono><thead><tr><th rowspan=2>시나리오</th><th class=r rowspan=2>PF32<br>진입 YTM</th><th class=r colspan=3>헤알(BRL) 기준 12개월 손익</th><th class=r colspan=3>원화(KRW) 기준 12개월 손익</th></tr><tr>${names.map(n => `<th class=r><small>${n}</small></th>`).join("")}${names.map(n => `<th class=r><small>${n}</small></th>`).join("")}</tr></thead><tbody>
     ${r.rows.map(x => `<tr><td style="white-space:normal">${x.name.split(" ")[0]} <small>${f2(x.w * 100, 0)}%</small></td><td class=r>${f2(x.yin, 2)}%</td>${cell(x.brlP, best(x.brlP))}${cell(x.krwP, best(x.krwP))}</tr>`).join("")}
@@ -252,6 +281,7 @@ function polSection(m) {
       <div class=tbl><table class=mono><thead><tr><th class=r>진입 후 금리</th><th class=r>12개월 후 YTM</th><th class=r>가격 변동</th><th class=r>헤알 손익</th>${fxs.map(f => `<th class=r>원화 손익<br><small>환율 ${f > 0 ? "+" : ""}${f}%</small></th>`).join("")}<th class=r>실질(원)<br><small>환율 0%</small></th></tr></thead><tbody>
       ${bps.map(b => { const brl = x.yin - r.Dpf * b / 100, k = f => ((1 + brl / 100) * (1 + f / 100) - 1) * 100; return `<tr${b === 0 ? ' style="font-weight:700"' : ""}><td class=r>${b > 0 ? "+" : ""}${b}bp</td><td class=r>${f2(x.yin + b / 100, 2)}%</td><td class=r>${pct(-r.Dpf * b / 100 + 0, 1)}</td><td class=r>${pct(brl, 1)}</td>${fxs.map(f => `<td class=r>${pct(k(f), 1)}</td>`).join("")}<td class=r>${pct(real(k(0), kr), 1)}</td></tr>`; }).join("")}</tbody></table></div>
       <div class=note>헤알 손익 = 진입 YTM − 듀레이션 × 진입 후 금리변동 (12개월 후 매도). 굵은 줄 = 진입 후 변동 없음. 실질(원)은 한국 물가 ${f2(kr, 1)}% 차감.</div>`; })()}
+    ${usdSection(r, m)}
     <div class=note>계산: 진입 PF32 YTM = 현재 ${f2(m.ytm)}% + 직후 금리변동 → 손익 = 진입 YTM − 듀레이션 ${f2(r.Dpf, 1)} × 진입 후 추가 금리변동 · Selic = 평균 Selic + 스프레드 ${f2(r.selSp, 4)}%p(${r.srcSl}) · IPCA+ = (1+진입 실질금리[현재 ${f2(r.ipReal)}%(${r.srcIp}) + 직후 변동])×(1+IPCA) − 듀레이션 ${f2(r.Dip, 1)} × 진입 후 실질 추가 변동 · 원화 = (1+BRL 손익)×(1+진입 후 환율변동) − 1. <b>12개월 후 매도 기준</b>이라 PF32를 만기까지 보유하면 가격 변동은 확정 손실이 아닙니다. 기다리는 동안의 이자(약 1주 ≈ 0.25%p), 매수 시점 호가 차이, 반응이 진입 전에 더 커지는 경우는 반영하지 않았습니다. 투자 권유가 아닌 가정 기반 비교입니다.</div>
     <p><button class=noprint onclick="showPolRef=!showPolRef;render(true)">📊 과거 선거·재정 충격 때의 실제 반응 ${showPolRef ? "닫기 ▲" : "보기 ▼"}</button> <button class=noprint onclick="if(confirm('가정값을 기본값으로 되돌립니다.'))polReset()">기본값으로</button></p>
     ${showPolRef ? `<div class=tbl><table class=mono><thead><tr><th>사건 (같은 고정금리 채권)</th><th class=r>금리</th><th class=r>채권 가격</th><th class=r>BRL/KRW</th></tr></thead><tbody>
