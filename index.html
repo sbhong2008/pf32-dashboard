@@ -201,7 +201,7 @@ function polCalc(m) {
   const pLula = side("룰라").reduce((a, r) => a + r.w, 0) * 100;
   return {P, rows, evB, evK, evKpre, evBest, evKR: evK.map(v => real(v, kr)), be, pLula, Dpf, Dip, ipReal, selSp, tw, srcIp: ip ? "CSV" : "기본값", srcSl: sl ? "CSV" : "기본값"};
 }
-let showPolRef = false;
+let showPolRef = false, polSel = 1;
 function polEdit(el) {
   const path = el.dataset.k.split("."), v = el.type === "number" ? parseFloat(el.value) : el.value;
   if (el.type === "number" && isNaN(v)) return;
@@ -231,6 +231,18 @@ function polSection(m) {
     <div class=tbl style="margin-top:8px"><table class=mono><thead><tr><th>시나리오 (확인 후)</th><th class=r>원화 최선 종목</th><th class=r>2위와 차이</th><th>분할 매수 방식 (제안)</th></tr></thead><tbody>
     ${r.rows.map(x => { const o = x.krwP.map((v, j) => [v, j]).sort((p, q) => q[0] - p[0]); const plan = x.side === "우파" ? (x.dy <= -30 ? "급등분 추격 금지 · 1단계 소액 후 눌림·재정 신호마다 추가" : "이미 반영 · 1단계 후 인선·예산 신호 확인하며 추가") : (x.dy >= 200 ? "초기엔 Selic 위주 · 1~2주 안정 확인 후 PF32 소액 · Copom·재정대책 신호 후 확대" : "1~2주 과매도 안정 후 분할 · Selic 병행"); return `<tr><td style="white-space:normal">${x.name.split(" ")[0]} <small>${f2(x.w * 100, 0)}%</small></td><td class=r><b>${o[0][0] - o[1][0] < 0.05 ? o.filter(t => o[0][0] - t[0] < 0.05).map(t => names[t[1]].split("(")[0]).join("=") + " 동률" : names[o[0][1]]}</b></td><td class=r>${o[0][0] - o[1][0] < 0.05 ? "—" : f2(o[0][0] - o[1][0], 1) + "%p"}</td><td style="white-space:normal;min-width:240px">${plan}</td></tr>`; }).join("")}
     <tr style="border-top:2px solid var(--ink)"><td>시나리오별 최선 선택 시 EV</td><td class=r colspan=3><b>${pct(r.evBest, 1)}</b></td></tr></tbody></table></div>
+    ${(() => {
+      const br = inflBR().v, kr = INF().kr, pu = m.price, bps = [-100, -50, 0, 50, 100, 200], fxs = [-10, 0, 10], x = r.rows[Math.min(polSel, r.rows.length - 1)];
+      const puTxt = v => pu ? "R$ " + f2(v, 2) : "—";
+      return `<h3 style="margin:14px 0 4px;font-size:14px">채권가격·만기 수익률 예측 (PF32, 결과 확인 직후 기준)</h3>
+      <div class=tbl><table class=mono><thead><tr><th>시나리오</th><th class=r>직후 금리 변동</th><th class=r>직후 가격 변동</th><th class=r>예상 PU</th><th class=r>진입 YTM<br><small>명목</small></th><th class=r>실질 만기수익률<br><small>IPCA ${f2(br, 1)}%</small></th><th class=r>실질<br><small>IPCA +1%p</small></th><th class=r>IPCA+ 진입 실질금리</th></tr></thead><tbody>
+      ${r.rows.map(y => { const dp = -r.Dpf * y.dy / 100 + 0; return `<tr><td style="white-space:normal">${y.name.split(" ")[0]} <small>${f2(y.w * 100, 0)}%</small></td><td class=r>${y.dy > 0 ? "+" : ""}${f2(y.dy, 0)}bp</td><td class=r>${pct(dp, 1)}</td><td class=r>${puTxt(pu * (1 + dp / 100))}</td><td class=r>${f2(y.yin, 2)}%</td><td class=r><b>${pct(real(y.yin, br), 2)}</b></td><td class=r>${pct(real(y.yin, br + 1), 2)}</td><td class=r>${f2(r.ipReal + y.dr / 100, 2)}%</td></tr>`; }).join("")}</tbody></table></div>
+      <div class=note>가격 변동 = −듀레이션 ${f2(r.Dpf, 1)} × 금리변동(볼록성 무시 → 큰 변동은 오차 있음). 만기까지 보유하면 가격 변동은 만기에 소멸하고 <b>실질 만기수익률</b>(명목 진입 YTM ÷ IPCA 만기 평균 ${f2(br, 1)}%)이 확정 수익입니다. 현재 PU ${puTxt(pu)}.</div>
+      <h3 style="margin:14px 0 4px;font-size:14px">민감도 — 진입 후 12개월 금리·환율 변동 (진입 YTM 기준)</h3>
+      <p class=noprint style="margin:2px 0 6px">${r.rows.map((y, i) => `<button onclick="polSel=${i};render(true)" ${i === polSel ? 'style="font-weight:700;text-decoration:underline"' : ""}>${y.name.split(" ")[0]}</button>`).join(" ")} <small>${x.name} · 진입 YTM ${f2(x.yin, 2)}%</small></p>
+      <div class=tbl><table class=mono><thead><tr><th class=r>진입 후 금리</th><th class=r>12개월 후 YTM</th><th class=r>가격 변동</th><th class=r>헤알 손익</th>${fxs.map(f => `<th class=r>원화 손익<br><small>환율 ${f > 0 ? "+" : ""}${f}%</small></th>`).join("")}<th class=r>실질(원)<br><small>환율 0%</small></th></tr></thead><tbody>
+      ${bps.map(b => { const brl = x.yin - r.Dpf * b / 100, k = f => ((1 + brl / 100) * (1 + f / 100) - 1) * 100; return `<tr${b === 0 ? ' style="font-weight:700"' : ""}><td class=r>${b > 0 ? "+" : ""}${b}bp</td><td class=r>${f2(x.yin + b / 100, 2)}%</td><td class=r>${pct(-r.Dpf * b / 100 + 0, 1)}</td><td class=r>${pct(brl, 1)}</td>${fxs.map(f => `<td class=r>${pct(k(f), 1)}</td>`).join("")}<td class=r>${pct(real(k(0), kr), 1)}</td></tr>`; }).join("")}</tbody></table></div>
+      <div class=note>헤알 손익 = 진입 YTM − 듀레이션 × 진입 후 금리변동 (12개월 후 매도). 굵은 줄 = 진입 후 변동 없음. 실질(원)은 한국 물가 ${f2(kr, 1)}% 차감.</div>`; })()}
     <div class=note>계산: 진입 PF32 YTM = 현재 ${f2(m.ytm)}% + 직후 금리변동 → 손익 = 진입 YTM − 듀레이션 ${f2(r.Dpf, 1)} × 진입 후 추가 금리변동 · Selic = 평균 Selic + 스프레드 ${f2(r.selSp, 4)}%p(${r.srcSl}) · IPCA+ = (1+진입 실질금리[현재 ${f2(r.ipReal)}%(${r.srcIp}) + 직후 변동])×(1+IPCA) − 듀레이션 ${f2(r.Dip, 1)} × 진입 후 실질 추가 변동 · 원화 = (1+BRL 손익)×(1+진입 후 환율변동) − 1. <b>12개월 후 매도 기준</b>이라 PF32를 만기까지 보유하면 가격 변동은 확정 손실이 아닙니다. 기다리는 동안의 이자(약 1주 ≈ 0.25%p), 매수 시점 호가 차이, 반응이 진입 전에 더 커지는 경우는 반영하지 않았습니다. 투자 권유가 아닌 가정 기반 비교입니다.</div>
     <p><button class=noprint onclick="showPolRef=!showPolRef;render(true)">📊 과거 선거·재정 충격 때의 실제 반응 ${showPolRef ? "닫기 ▲" : "보기 ▼"}</button> <button class=noprint onclick="if(confirm('가정값을 기본값으로 되돌립니다.'))polReset()">기본값으로</button></p>
     ${showPolRef ? `<div class=tbl><table class=mono><thead><tr><th>사건 (같은 고정금리 채권)</th><th class=r>금리</th><th class=r>채권 가격</th><th class=r>BRL/KRW</th></tr></thead><tbody>
