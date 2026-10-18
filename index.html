@@ -560,7 +560,7 @@ function realCmpSection(m) {
   const rg = cases.map(() => ({"한국": {}, "브라질": {}, "미국": {}}));   // 가정별로 해당 1년 구간이 끝난 시점의 집권 정권 집계
   if (roll) roll.forEach(([rb, ru, dt]) => { let bi = 0, bd = Infinity; cases.forEach((c, i) => { const d = (rb - c[1]) ** 2 + (ru - c[2]) ** 2; if (d < bd) { bd = d; bi = i; } }); cnt[bi]++;
     if (dt) ["한국", "브라질", "미국"].forEach(c => { const w = reg(c, dt); if (w) rg[bi][c][w] = (rg[bi][c][w] || 0) + 1; }); });
-  const regTxt = ci => !roll || !cnt[ci] || !roll[0][2] ? "" : ["한국", "브라질", "미국"].map(c => `${c}: ` + Object.entries(rg[ci][c]).sort((a, b) => b[1] - a[1]).map(([w, n]) => `${w} ${f2(n / cnt[ci] * 100, 0)}%`).join(" · ")).join("<br>");
+  const regTxt = ci => !roll || !cnt[ci] || !roll[0][2] ? "" : ["한국", "브라질", "미국"].map(c => `${c}: ` + Object.entries(rg[ci][c]).map(([w, n]) => `${w} ${f2(n / cnt[ci] * 100, 0)}%`).join(" · ")).join("<br>");
   const quad = roll ? (f => [f((b, u) => b < 0 && u < 0), f((b, u) => b < 0 && u >= 0), f((b, u) => b >= 0 && u < 0), f((b, u) => b >= 0 && u >= 0)])(g => roll.filter(([b, u]) => g(b, u)).length / roll.length * 100) : null;
   // 가정별 발생 구간(연속 4표본≈약 1개월 이상): 구간 종료일 기준 집권 순서와 직전 1년간 주요 사건
   const eps = cases.map(() => []);
