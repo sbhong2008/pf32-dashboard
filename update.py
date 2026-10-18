@@ -87,7 +87,7 @@ def fx_stats(brl_krw, brl_usd, years=5):
         out[key] = {"cagr": round(((vs[-1] / vs[i0]) ** (1 / years) - 1) * 100, 2),
                     "up": round(sum(up) / len(up), 2) if up else 0, "down": round(sum(dn) / len(dn), 2) if dn else 0}
     out["terms"] = fx_terms(sers)
-    # 롤링 1년 변화율 쌍(헤알, 달러) — 약 주 1회 표본. 환율 가정이 과거에 얼마나 자주 있었는지 계산용
+    # 롤링 1년 변화율 쌍(헤알, 달러, 구간 종료일) — 약 주 1회 표본. 환율 가정이 과거에 얼마나 자주 있었는지 계산용
     bs, us = sers["brl"], sers["usd"]; ud = dict(us); roll = []; j = 0
     ds = [date.fromisoformat(d) for d, _ in bs]
     for i in range(0, len(bs), 5):
@@ -95,7 +95,7 @@ def fx_stats(brl_krw, brl_usd, years=5):
         if tgt < ds[0]: continue
         while j + 1 < i and ds[j + 1] <= tgt: j += 1
         d1, d0 = bs[i][0], bs[j][0]
-        if d1 in ud and d0 in ud: roll.append([round((bs[i][1] / bs[j][1] - 1) * 100, 1), round((ud[d1] / ud[d0] - 1) * 100, 1)])
+        if d1 in ud and d0 in ud: roll.append([round((bs[i][1] / bs[j][1] - 1) * 100, 1), round((ud[d1] / ud[d0] - 1) * 100, 1), d1])
     out["roll"] = roll
     out["asof"] = ds[-1].isoformat()
     return out
