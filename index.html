@@ -542,7 +542,11 @@ function rcEdit(el) {
 }
 function realCmpSection(m) {
   const r = polCalc(m), L = C.usd_bonds && C.usd_bonds.length ? C.usd_bonds : USD_DEF, b = L[Math.min(usdSel, L.length - 1)], kr = INF().kr;
-  const cases = C.rc3 && C.rc3.length ? C.rc3 : rcDef(), inp = (i, j, v) => `<input type=number step=any data-i="${i}" data-j="${j}" value="${v}" style="width:56px;text-align:right" onchange="rcEdit(this)">`;
+  const cases = C.rc3 && C.rc3.length ? C.rc3 : rcDef(), inp = (i, j, v) => `<input type=number step=any data-i="${i}" data-j="${j}" value="${v}" style="width:72px;text-align:right" onchange="rcEdit(this)">`;
+  // 과거 발생빈도: 롤링 1년 변화율(헤알, 달러) 표본을 거리상 가장 가까운 환율 가정에 배정
+  const roll = D.fx_stats && D.fx_stats.roll && D.fx_stats.roll.length ? D.fx_stats.roll : null, cnt = cases.map(() => 0);
+  if (roll) roll.forEach(([rb, ru]) => { let bi = 0, bd = Infinity; cases.forEach((c, i) => { const d = (rb - c[1]) ** 2 + (ru - c[2]) ** 2; if (d < bd) { bd = d; bi = i; } }); cnt[bi]++; });
+  const quad = roll ? (f => [f((b, u) => b < 0 && u < 0), f((b, u) => b < 0 && u >= 0), f((b, u) => b >= 0 && u < 0), f((b, u) => b >= 0 && u >= 0)])(g => roll.filter(([b, u]) => g(b, u)).length / roll.length * 100) : null;
   const ann = (y, g) => ((1 + y / 100) * (1 + g / 100) - 1) * 100;
   const body = cases.map((c, ci) => {
     const rs = r.rows.map(x => {
@@ -552,7 +556,7 @@ function realCmpSection(m) {
     const ev = j => rs.reduce((a, o) => a + o.x.w * o.v[j], 0);
     const cell = (v, bi) => v.map((t, j) => `<td class=r ${j === bi ? 'style="font-weight:700"' : ""}>${pct(t, 1)}</td>`).join("");
     const bi = v => v.indexOf(Math.max(...v));
-    return rs.map((o, k) => `<tr${k === 0 ? ' style="border-top:2px solid var(--ink)"' : ""}>${k === 0 ? `<td rowspan=5 style="white-space:normal;min-width:170px;vertical-align:top"><b>${c[0]}</b><br><small>헤알 연 ${inp(ci, 1, c[1])}% · 달러 연 ${inp(ci, 2, c[2])}%</small></td>` : ""}<td style="white-space:normal">${o.x.name.split(" ")[0]} <small>${f2(o.x.w * 100, 0)}%</small></td><td class=r>${f2(o.x.yin, 2)}%</td><td class=r>${f2(b.ytm + o.x.sp / 100, 2)}%</td>${cell(o.v, bi(o.v))}</tr>`).join("")
+    return rs.map((o, k) => `<tr${k === 0 ? ' style="border-top:2px solid var(--ink)"' : ""}>${k === 0 ? `<td rowspan=5 style="white-space:normal;min-width:170px;vertical-align:top"><b>${c[0]}</b><br><small>헤알 연 ${inp(ci, 1, c[1])}% · 달러 연 ${inp(ci, 2, c[2])}%</small>${roll ? `<br><span style="display:inline-block;margin-top:4px;font-weight:700">과거 발생빈도 ${f2(cnt[ci] / roll.length * 100, 0)}%</span>` : ""}</td>` : ""}<td style="white-space:normal">${o.x.name.split(" ")[0]} <small>${f2(o.x.w * 100, 0)}%</small></td><td class=r>${f2(o.x.yin, 2)}%</td><td class=r>${f2(b.ytm + o.x.sp / 100, 2)}%</td>${cell(o.v, bi(o.v))}</tr>`).join("")
       + `<tr style="font-weight:700"><td>EV</td><td></td><td></td>${cell([ev(0), ev(1), ev(2)], bi([ev(0), ev(1), ev(2)]))}</tr>`;
   }).join("");
   return `<section><h2>04-3 헤알채(PF32) vs 달러표시 채권 — 원화 실질 만기수익률 비교</h2><div class=body>
@@ -563,6 +567,7 @@ function realCmpSection(m) {
       <div class=tbl><table class=mono><thead><tr><th>국가</th><th>집권 (진영)</th><th>기간</th><th class=r>헤알 BRL/KRW<br><small>기간 변화</small></th><th class=r><small>연환산</small></th><th class=r>달러 USD/KRW<br><small>기간 변화</small></th><th class=r><small>연환산</small></th></tr></thead><tbody>
       ${T.map(t => `<tr><td>${t.c}</td><td style="white-space:normal">${t.who}</td><td>${t.from.slice(2, 7).replace("-", ".")}~${t.to.slice(2, 7).replace("-", ".")}</td>${c(t.brl)}${c(t.usd)}</tr>`).join("")}</tbody></table></div>
       <div class=note>양수 = 해당 통화 강세(원화 약세). 진영과 환율의 <b>인과관계가 아닙니다</b> — 표본이 정권 3~4개뿐이고 같은 기간에 코로나, 달러 사이클, 원자재 가격, 원화 자체의 움직임이 크게 작용했습니다. 브라질 집권 기간 미국 정권이 겹치므로 두 표를 따로 해석하세요. 룰라 3기는 2023-01 취임 이후, 트럼프 2기는 2025-01 취임 이후 현재까지입니다.</div>`; })()}
+    ${roll ? `<div class=note><b>발생빈도</b> = 과거 약 ${f2(roll.length / 52, 0)}년간(데이터 시작 2016-10 이후) 매주 기준 '직전 1년간 헤알·달러 변화율'을 위 5개 가정 중 <b>가장 가까운 것</b>에 배정한 비율입니다(합 100%, 가정값을 고치면 다시 계산). 4분면 기준으로는 헤알·달러 동반 약세(원화 강세) ${f2(quad[0], 0)}% · 헤알 약세·달러 강세 ${f2(quad[1], 0)}% · 헤알 강세·달러 약세 ${f2(quad[2], 0)}% · 동반 강세(원화 약세) ${f2(quad[3], 0)}%였습니다. 겹치는 1년 구간이라 독립 표본이 아니며 미래 확률이 아닙니다.</div>` : `<div class=note>발생빈도는 데이터 갱신(fx_stats.roll) 후 표시됩니다.</div>`}
     <div class=note>굵은 글씨 = 해당 행에서 가장 높은 구성. 5:5 = (PF32 원화 연수익 + 달러채 원화 연수익) ÷ 2 (재조정·이자 재투자 단순화) · 달러 수익 = 진입 YTM($)(미 국채금리 변동 없음 가정) · 가산금리 변동 가정은 04-2 입력표 · 예금 대비 비교: 예금 4.3%의 실질은 약 ${f2(real(4.3, kr), 1)}% · 세금·수수료·환전비용 미반영, 투자 권유 아님.</div>
   </div></section>`;
 }
