@@ -523,8 +523,39 @@ V.scen = m => {
     <thead><tr><th>시나리오</th><th class=r>확률</th><th class=r>BRL/KRW</th><th class=r>FX 변동</th><th class=r>PF32 총수익</th><th class=r>실질(원)</th><th class=r>5:5 수익</th></tr></thead><tbody>
     ${s.rows.map(r => `<tr><td>${r.name}</td><td class=r>${r.prob}%</td><td class=r>${f2(r.fx)}</td><td class=r>${pct(r.fxchg, 1)}</td><td class=r>${pct(r.t, 1)}</td><td class=r>${pct(real(r.t, INF().kr), 1)}</td><td class=r>${pct(r.p55, 2)}</td></tr>`).join("")}
     <tr style="font-weight:700"><td>EV 기대수익</td><td class=r>${s.w}%</td><td></td><td></td><td class=r>${pct(s.ev, 1)}</td><td class=r>${pct(real(s.ev, INF().kr), 1)}</td><td class=r>${pct(s.ev55, 1)}</td></tr></tbody></table>
-    <div class=note>확률 합이 ${s.w}% 입니다${s.w !== 100 ? " — 가중평균으로 정규화했습니다." : "."} 확률·환율 가정은 설정 탭에서 바꿀 수 있습니다.</div></div></section>${polSection(m)}`;
+    <div class=note>확률 합이 ${s.w}% 입니다${s.w !== 100 ? " — 가중평균으로 정규화했습니다." : "."} 확률·환율 가정은 설정 탭에서 바꿀 수 있습니다.</div></div></section>${polSection(m)}${realCmpSection(m)}`;
 };
+// ---------- 04-3 헤알채(PF32) vs 달러채 원화 실질 만기수익률 ----------
+const RC_DEF = [["헤알 강세", 3, 0], ["환율 변동 없음", 0, 0], ["헤알 완만 약세(10년 평균)", -3, 0], ["위기형(헤알 약세·달러 강세)", -7, 5]];
+function rcEdit(el) {
+  const i = +el.dataset.i, j = +el.dataset.j, v = parseFloat(el.value); if (isNaN(v)) return;
+  if (!C.rc_cases) C.rc_cases = RC_DEF.map(c => c.slice());
+  C.rc_cases[i][j] = v;
+  try { localStorage.setItem("pf32cfg", JSON.stringify(C)); } catch (e) {}
+  if (LOCAL) fetch("/api/config", {method: "POST", body: JSON.stringify(C)}).catch(() => {});
+  render(true);
+}
+function realCmpSection(m) {
+  const r = polCalc(m), L = C.usd_bonds && C.usd_bonds.length ? C.usd_bonds : USD_DEF, b = L[Math.min(usdSel, L.length - 1)], kr = INF().kr;
+  const cases = C.rc_cases && C.rc_cases.length ? C.rc_cases : RC_DEF, inp = (i, j, v) => `<input type=number step=any data-i="${i}" data-j="${j}" value="${v}" style="width:56px;text-align:right" onchange="rcEdit(this)">`;
+  const ann = (y, g) => ((1 + y / 100) * (1 + g / 100) - 1) * 100;
+  const body = cases.map((c, ci) => {
+    const rs = r.rows.map(x => {
+      const kP = ann(x.yin, c[1]), kU = ann(b.ytm + x.sp / 100, c[2]);
+      return {x, v: [real(kP, kr), real((kP + kU) / 2, kr), real(kU, kr)]};
+    });
+    const ev = j => rs.reduce((a, o) => a + o.x.w * o.v[j], 0);
+    const cell = (v, bi) => v.map((t, j) => `<td class=r ${j === bi ? 'style="font-weight:700"' : ""}>${pct(t, 1)}</td>`).join("");
+    const bi = v => v.indexOf(Math.max(...v));
+    return rs.map((o, k) => `<tr${k === 0 ? ' style="border-top:2px solid var(--ink)"' : ""}>${k === 0 ? `<td rowspan=5 style="white-space:normal;min-width:150px;vertical-align:top"><b>${c[0]}</b><br><small>헤알 연 ${inp(ci, 1, c[1])}% · 달러 연 ${inp(ci, 2, c[2])}%</small></td>` : ""}<td style="white-space:normal">${o.x.name.split(" ")[0]} <small>${f2(o.x.w * 100, 0)}%</small></td><td class=r>${f2(o.x.yin, 2)}%</td><td class=r>${f2(b.ytm + o.x.sp / 100, 2)}%</td>${cell(o.v, bi(o.v))}</tr>`).join("")
+      + `<tr style="font-weight:700"><td>EV</td><td></td><td></td>${cell([ev(0), ev(1), ev(2)], bi([ev(0), ev(1), ev(2)]))}</tr>`;
+  }).join("");
+  return `<section><h2>04-3 헤알채(PF32) vs 달러표시 채권 — 원화 실질 만기수익률 비교</h2><div class=body>
+    <div class=note>확인 뒤 매수한 진입 YTM로 만기까지 보유할 때의 <b>연율 원화 실질 수익률</b>(한국 물가 ${f2(kr, 1)}% 차감). 달러채는 <b>${b.n}</b> 기준(04-2에서 종목 선택). 환율은 <b>진입 후 연 변동</b>이며 헤알=BRL/KRW, 달러=USD/KRW. 진입 전 환율 충격은 매수가에 이미 반영된 것으로 봅니다. 환율 가정은 입력칸에서 수정할 수 있습니다.</div>
+    <div class=tbl><table class=mono><thead><tr><th>환율 가정</th><th>시나리오</th><th class=r>PF32<br>진입 YTM</th><th class=r>달러채<br>진입 YTM</th><th class=r>PF32 100%<br><small>실질(원)</small></th><th class=r>5:5<br><small>실질(원)</small></th><th class=r>달러채 100%<br><small>실질(원)</small></th></tr></thead><tbody>${body}</tbody></table></div>
+    <div class=note>굵은 글씨 = 해당 행에서 가장 높은 구성. 5:5 = (PF32 원화 연수익 + 달러채 원화 연수익) ÷ 2 (재조정·이자 재투자 단순화) · 달러 수익 = 진입 YTM($)(미 국채금리 변동 없음 가정) · 가산금리 변동 가정은 04-2 입력표 · 예금 대비 비교: 예금 4.3%의 실질은 약 ${f2(real(4.3, kr), 1)}% · 세금·수수료·환전비용 미반영, 투자 권유 아님.</div>
+  </div></section>`;
+}
 V.port = m => {
   const s = scen(m), b = C.braz2034_ytm, lula = s.rows[0];
   return `<section><h2>05 분산포트폴리오 5:5 — PF32 50% + USD BRAZ 2034 50%</h2><div class=body>
@@ -570,7 +601,7 @@ V.settings = m => {
   </div></section>`;
 };
 
-const CFG_KEYS = ["stages", "stop_price", "stop_fx", "target_price", "braz2034_ytm", "scenarios", "extra_fx_rows", "fx_range", "infl", "pol", "usd_inc"];
+const CFG_KEYS = ["stages", "stop_price", "stop_fx", "target_price", "braz2034_ytm", "scenarios", "extra_fx_rows", "fx_range", "infl", "pol", "usd_inc", "rc_cases"];
 async function exportCfg() {
   const o = {}; CFG_KEYS.forEach(k => { if (C[k] !== undefined) o[k] = C[k]; });
   const t = JSON.stringify(o);
