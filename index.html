@@ -161,6 +161,80 @@ const total = (ytmPct, fxFrom, fxTo) => ((1 + ytmPct / 100) * (fxTo / fxFrom) - 
 // ---------- 실질수익률 (인플레 제거, 피셔 방정식) ----------
 const real = (nomPct, inflPct) => ((1 + nomPct / 100) / (1 + inflPct / 100) - 1) * 100;
 const INF = () => Object.assign({kr: 2.0, us: 2.5, br_manual: 0, usdkrw_assume: 0}, C.infl || {});
+
+// ---------- 정치·재정 시나리오 (PF32 고정금리 vs Selic 연동 vs IPCA+) ----------
+// 기본값은 2018·2022 선거, 2024 재정 충격 때의 실제 움직임을 참고한 '가정'이며 예측이 아님. 모두 이 탭에서 직접 수정 가능
+const POL_DEF = {
+  sel_now: 13.75, sel_spread: 0.0979, ipca_real: 6.83, ipca_venc: "15/08/2032", horizon_note: "12개월 보유 후 매도",
+  sc: [
+    {name: "S1 우파 승리 + 재정 신뢰 회복", side: "우파", prob: 31, dy: -60, sel: 12.3, ipca: 3.8, dr: -30, fx: 5},
+    {name: "S2 우파 승리, 개혁 지연(이미 반영)", side: "우파", prob: 47, dy: 0, sel: 12.9, ipca: 4.3, dr: 0, fx: 0},
+    {name: "S3 룰라 재선 + 재정 현상유지(2022형)", side: "룰라", prob: 15, dy: 150, sel: 13.4, ipca: 5.0, dr: 75, fx: -7},
+    {name: "S4 룰라 재선 + 재정 악화(2024형)", side: "룰라", prob: 7, dy: 250, sel: 14.3, ipca: 6.5, dr: 125, fx: -12}]
+};
+const POL = () => { const c = C.pol || {}; return {...POL_DEF, ...c, sc: (c.sc && c.sc.length ? c.sc : POL_DEF.sc).map((s, i) => ({...POL_DEF.sc[i], ...s}))}; };
+function yearsTo(venc, now = new Date()) { const [d, m, y] = venc.split("/").map(Number); return Math.max(0.1, (new Date(y, m - 1, d) - now) / (365.25 * 864e5)); }
+function polCalc(m) {
+  const P = POL(), live = k => (D.live || []).find(b => b.key === k);
+  const ip = live("Tesouro IPCA+|" + P.ipca_venc), sl = (D.live || []).find(b => /Selic/.test(b.name) && b.rate != null && /2031/.test(b.name));
+  const ipReal = ip && ip.rate != null ? ip.rate : P.ipca_real, selSp = sl ? sl.rate : P.sel_spread;
+  const Dpf = yearsTo(C.tracked.venc) / (1 + m.ytm / 100), Dip = yearsTo(P.ipca_venc) / (1 + ipReal / 100);
+  const tw = P.sc.reduce((a, s) => a + (+s.prob || 0), 0) || 1, kr = INF().kr;
+  const rows = P.sc.map(s => {
+    const pf = m.ytm - Dpf * s.dy / 100, se = s.sel + selSp, ipc = ((1 + ipReal / 100) * (1 + s.ipca / 100) - 1) * 100 - Dip * s.dr / 100;
+    const k = r => ((1 + r / 100) * (1 + s.fx / 100) - 1) * 100;
+    return {...s, w: (+s.prob || 0) / tw, brl: [pf, se, ipc], krw: [k(pf), k(se), k(ipc)]};
+  });
+  const ev = key => [0, 1, 2].map(j => rows.reduce((a, r) => a + r.w * r[key][j], 0));
+  const evB = ev("brl"), evK = ev("krw");
+  // 룰라 승리 확률을 0~100%로 바꿔 가며(각 진영 안의 배분은 유지) Selic 이 PF32 를 앞서는 지점
+  const side = n => rows.filter(r => r.side === n), sh = (r, n) => { const t = side(n).reduce((a, x) => a + x.w, 0) || 1; return r.w / t; };
+  let be = null;
+  if (side("우파").length && side("룰라").length) for (let pl = 0; pl <= 100; pl++) {
+    const e = j => rows.reduce((a, r) => a + (r.side === "룰라" ? pl / 100 : 1 - pl / 100) * sh(r, r.side) * r.krw[j], 0);
+    if (e(1) > e(0)) { be = pl; break; }
+  }
+  const pLula = side("룰라").reduce((a, r) => a + r.w, 0) * 100;
+  return {P, rows, evB, evK, evKR: evK.map(v => real(v, kr)), be, pLula, Dpf, Dip, ipReal, selSp, tw, srcIp: ip ? "CSV" : "기본값", srcSl: sl ? "CSV" : "기본값"};
+}
+let showPolRef = false;
+function polEdit(el) {
+  const path = el.dataset.k.split("."), v = el.type === "number" ? parseFloat(el.value) : el.value;
+  if (el.type === "number" && isNaN(v)) return;
+  if (!C.pol) C.pol = {}; if (!C.pol.sc) C.pol.sc = POL().sc;
+  let o = C; path.slice(0, -1).forEach(p => o = o[p]); o[path.at(-1)] = v;   // path 는 "pol.sc.i.키" → C 에서 시작
+  try { localStorage.setItem("pf32cfg", JSON.stringify(C)); } catch (e) {}
+  if (LOCAL) fetch("/api/config", {method: "POST", body: JSON.stringify(C)}).catch(() => {});
+  render(true);
+}
+function polReset() { delete C.pol; try { localStorage.setItem("pf32cfg", JSON.stringify(C)); } catch (e) {} if (LOCAL) fetch("/api/config", {method: "POST", body: JSON.stringify(C)}).catch(() => {}); render(); }
+function polSection(m) {
+  const r = polCalc(m), P = r.P, inp = (k, v, w = 68) => `<input type=number step=any data-k="${k}" value="${v}" style="width:${w}px;text-align:right" onchange="polEdit(this)">`;
+  const names = ["PF32(고정)", "Selic 연동", "IPCA+ 2032"];
+  const best = arr => arr.indexOf(Math.max(...arr));
+  const cell = (arr, bi) => arr.map((v, j) => `<td class=r ${j === bi ? 'style="font-weight:700"' : ""}>${pct(v, 1)}</td>`).join("");
+  return `<section><h2>04-2 정치·재정 시나리오 비교 — PF32 vs Selic vs IPCA+</h2><div class=body>
+    <div class=note>결선 <b>10/25 · 플라비우 볼소나루(우파) vs 룰라(좌파)</b> · 예측시장의 우파 승리 확률은 약 77~78%(10/16 보도) · 정부 재정: 총부채 GDP 대비 80%대 초반, 2026 기초수지 적자 전망 — <b>확률과 금리·환율 반응은 아래에서 직접 입력</b>하세요 (입력값은 이 기기에만 저장).</div>
+    <div class=tbl style="margin-top:8px"><table class=mono><thead><tr><th>가정 (12개월)</th><th class=r>확률%</th><th class=r>금리 변동 bp<br><small>5년물</small></th><th class=r>평균 Selic %</th><th class=r>실제 IPCA %</th><th class=r>실질금리 변동 bp</th><th class=r>BRL/KRW %</th></tr></thead><tbody>
+    ${P.sc.map((s, i) => `<tr><td style="white-space:normal;min-width:190px">${s.name}</td><td class=r>${inp(`pol.sc.${i}.prob`, s.prob, 48)}</td><td class=r>${inp(`pol.sc.${i}.dy`, s.dy)}</td><td class=r>${inp(`pol.sc.${i}.sel`, s.sel)}</td><td class=r>${inp(`pol.sc.${i}.ipca`, s.ipca)}</td><td class=r>${inp(`pol.sc.${i}.dr`, s.dr)}</td><td class=r>${inp(`pol.sc.${i}.fx`, s.fx)}</td></tr>`).join("")}</tbody></table></div>
+    <div class=note>확률 합 ${r.tw}%${r.tw !== 100 ? " → 정규화해 계산" : ""} · 룰라 승리 합계 ${f2(r.pLula, 0)}%</div>
+    <div class=tbl style="margin-top:8px"><table class=mono><thead><tr><th rowspan=2>시나리오</th><th class=r colspan=3>헤알(BRL) 기준 수익</th><th class=r colspan=3>원화(KRW) 기준 수익</th></tr><tr>${names.map(n => `<th class=r><small>${n}</small></th>`).join("")}${names.map(n => `<th class=r><small>${n}</small></th>`).join("")}</tr></thead><tbody>
+    ${r.rows.map(x => `<tr><td style="white-space:normal">${x.name.split(" ")[0]} <small>${f2(x.w * 100, 0)}%</small></td>${cell(x.brl, best(x.brl))}${cell(x.krw, best(x.krw))}</tr>`).join("")}
+    <tr style="border-top:2px solid var(--ink)"><td><b>기대값 EV</b></td>${cell(r.evB, best(r.evB))}${cell(r.evK, best(r.evK))}</tr>
+    <tr><td>EV 실질(원)</td><td colspan=3></td>${r.evKR.map(v => `<td class=r>${pct(v, 1)}</td>`).join("")}</tr></tbody></table></div>
+    <div class=note>${r.be == null ? "입력한 시나리오에서는 룰라 승리 확률을 바꿔도 순위가 바뀌지 않거나 진영 구분이 부족합니다." : (r.pLula > r.be ? `⚠ 룰라 승리 확률이 <b>${r.be}%</b>를 넘으면 원화 기준 Selic 채권의 기대수익이 PF32를 앞섭니다 (현재 입력 ${f2(r.pLula, 0)}% → Selic 우위).` : `룰라 승리 확률이 <b>${r.be}%</b>를 넘으면 원화 기준 Selic 채권의 기대수익이 PF32를 앞섭니다 (현재 입력 ${f2(r.pLula, 0)}% → PF32 우위).`)}
+    <br>계산: PF32 = YTM ${f2(m.ytm)}% − 듀레이션 ${f2(r.Dpf, 1)} × 금리변동 · Selic = 평균 Selic + 스프레드 ${f2(r.selSp, 4)}%p(${r.srcSl}) · IPCA+ = (1+실질 ${f2(r.ipReal)}%[${r.srcIp}])×(1+IPCA) − 듀레이션 ${f2(r.Dip, 1)} × 실질금리변동 · 원화 = (1+BRL수익)×(1+환율변동) − 1. <b>12개월 후 매도 기준</b>이라 PF32를 만기까지 보유하면 가격 변동은 확정 손실이 아닙니다. 투자 권유가 아닌 가정 기반 비교입니다.</div>
+    <p><button class=noprint onclick="showPolRef=!showPolRef;render(true)">📊 과거 선거·재정 충격 때의 실제 반응 ${showPolRef ? "닫기 ▲" : "보기 ▼"}</button> <button class=noprint onclick="if(confirm('가정값을 기본값으로 되돌립니다.'))polReset()">기본값으로</button></p>
+    ${showPolRef ? `<div class=tbl><table class=mono><thead><tr><th>사건 (같은 고정금리 채권)</th><th class=r>금리</th><th class=r>채권 가격</th><th class=r>BRL/KRW</th></tr></thead><tbody>
+      <tr><td>2018 우파 부상 (1차→결선 직전)</td><td class=r>-95bp</td><td class=r>+4.2%</td><td class=r>+5.0%</td></tr>
+      <tr><td>2018 우파 승리 (결선→+20영업일)</td><td class=r>-50bp</td><td class=r>+2.6%</td><td class=r>-5.0%</td></tr>
+      <tr><td>2022 룰라 승리 (결선→+20영업일)</td><td class=r>+158bp</td><td class=r>-7.4%</td><td class=r>-6.9%</td></tr>
+      <tr><td>2022 룰라 승리 (+60영업일, 재정 우려)</td><td class=r>+109bp</td><td class=r>-2.8%</td><td class=r>-8.5%</td></tr>
+      <tr><td>2024-11 재정 패키지 실망 (→12/20)</td><td class=r>+192bp</td><td class=r>-5.0%</td><td class=r>-0.3%*</td></tr>
+      <tr><td><b>2026 1차 직후 (10/2→10/15)</b></td><td class=r>-128bp</td><td class=r>+6.5%</td><td class=r>+3.1%</td></tr></tbody></table></div>
+      <div class=note>Tesouro CSV·Frankfurter(ECB) 이력으로 계산 · *2024년 말은 원화 약세가 겹쳐 BRL/KRW가 덜 움직임 · 이번 1차 후 이미 금리가 크게 내려 우파 승리가 상당 부분 가격에 반영됨(비대칭).</div>` : ""}
+  </div></section>`;
+}
 // 만기까지 연평균 IPCA 기대: BCB Focus 연도별 중앙값을 기간(연 단위) 가중 기하평균. 자료가 끝난 연도는 마지막 값 유지
 function inflBR(now = new Date(), byOverride) {
   const man = INF().br_manual;
@@ -370,7 +444,7 @@ V.scen = m => {
     <thead><tr><th>시나리오</th><th class=r>확률</th><th class=r>BRL/KRW</th><th class=r>FX 변동</th><th class=r>PF32 총수익</th><th class=r>실질(원)</th><th class=r>5:5 수익</th></tr></thead><tbody>
     ${s.rows.map(r => `<tr><td>${r.name}</td><td class=r>${r.prob}%</td><td class=r>${f2(r.fx)}</td><td class=r>${pct(r.fxchg, 1)}</td><td class=r>${pct(r.t, 1)}</td><td class=r>${pct(real(r.t, INF().kr), 1)}</td><td class=r>${pct(r.p55, 2)}</td></tr>`).join("")}
     <tr style="font-weight:700"><td>EV 기대수익</td><td class=r>${s.w}%</td><td></td><td></td><td class=r>${pct(s.ev, 1)}</td><td class=r>${pct(real(s.ev, INF().kr), 1)}</td><td class=r>${pct(s.ev55, 1)}</td></tr></tbody></table>
-    <div class=note>확률 합이 ${s.w}% 입니다${s.w !== 100 ? " — 가중평균으로 정규화했습니다." : "."} 확률·환율 가정은 설정 탭에서 바꿀 수 있습니다.</div></div></section>`;
+    <div class=note>확률 합이 ${s.w}% 입니다${s.w !== 100 ? " — 가중평균으로 정규화했습니다." : "."} 확률·환율 가정은 설정 탭에서 바꿀 수 있습니다.</div></div></section>${polSection(m)}`;
 };
 V.port = m => {
   const s = scen(m), b = C.braz2034_ytm, lula = s.rows[0];
@@ -417,7 +491,7 @@ V.settings = m => {
   </div></section>`;
 };
 
-const CFG_KEYS = ["stages", "stop_price", "stop_fx", "target_price", "braz2034_ytm", "scenarios", "extra_fx_rows", "fx_range", "infl"];
+const CFG_KEYS = ["stages", "stop_price", "stop_fx", "target_price", "braz2034_ytm", "scenarios", "extra_fx_rows", "fx_range", "infl", "pol"];
 async function exportCfg() {
   const o = {}; CFG_KEYS.forEach(k => { if (C[k] !== undefined) o[k] = C[k]; });
   const t = JSON.stringify(o);
