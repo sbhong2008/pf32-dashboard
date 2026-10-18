@@ -48,6 +48,49 @@ def update_fx():
     return rows
 
 
+# 집권 기간(진영별 환율 비교용). 데이터 시작이 2016-10이라 그 이후 기간만 사용
+TERMS = [("브라질", "테메르(중도우파)", "2016-10-20", "2018-12-31"), ("브라질", "보우소나루(우파)", "2019-01-01", "2022-12-30"), ("브라질", "룰라(좌파)", "2023-01-02", None),
+         ("미국", "트럼프 1기(공화)", "2017-01-20", "2021-01-20"), ("미국", "바이든(민주)", "2021-01-20", "2025-01-20"), ("미국", "트럼프 2기(공화)", "2025-01-20", None)]
+
+
+def fx_terms(sers):
+    out = []
+    for c, who, a, b in TERMS:
+        row = {"c": c, "who": who, "from": a, "to": b or sers["brl"][-1][0]}
+        for key, ser in sers.items():
+            x0 = next(x for x in ser if x[0] >= a) if ser[0][0] < a else ser[0]
+            x1 = [x for x in ser if x[0] <= row["to"]][-1]
+            yrs = (date.fromisoformat(x1[0]) - date.fromisoformat(x0[0])).days / 365.25
+            row[key] = {"chg": round((x1[1] / x0[1] - 1) * 100, 1), "cagr": round(((x1[1] / x0[1]) ** (1 / yrs) - 1) * 100, 1)}
+        out.append(row)
+    return out
+
+
+def fx_stats(brl_krw, brl_usd, years=5):
+    """최근 N년 환율 통계(원화 기준 BRL/KRW·USD/KRW): 연평균 변화율(CAGR), 롤링 1년 변화율의 강세·약세 구간 평균."""
+    usd = dict(brl_usd)
+    sers = {"brl": [(d, v) for d, v in brl_krw],
+            "usd": [(d, k / usd[d]) for d, k in brl_krw if usd.get(d)]}
+    out = {"yrs": years}
+    for key, ser in sers.items():
+        if len(ser) < 400: return None
+        ds = [date.fromisoformat(d) for d, _ in ser]; vs = [v for _, v in ser]
+        end = ds[-1]; start = end.replace(year=end.year - years)
+        roll = []; j = 0
+        for i, d in enumerate(ds):
+            if d < start: continue
+            tgt = d - timedelta(days=365)
+            while j + 1 < i and ds[j + 1] <= tgt: j += 1
+            if ds[j] <= tgt: roll.append((vs[i] / vs[j] - 1) * 100)
+        i0 = max(i for i, d in enumerate(ds) if d <= start)
+        up = [x for x in roll if x > 0]; dn = [x for x in roll if x < 0]
+        out[key] = {"cagr": round(((vs[-1] / vs[i0]) ** (1 / years) - 1) * 100, 2),
+                    "up": round(sum(up) / len(up), 2) if up else 0, "down": round(sum(dn) / len(dn), 2) if dn else 0}
+    out["terms"] = fx_terms(sers)
+    out["asof"] = ds[-1].isoformat()
+    return out
+
+
 def update_infl():
     """브라질 시장 IPCA 기대치(BCB Focus, 연도별 중앙값). 한국·미국 물가는 키 없이 받을 수 있는 소스가 없어 설정값 사용."""
     start = (date.today() - timedelta(days=400)).isoformat()
@@ -148,6 +191,9 @@ def main():
     prev = {}
     try: prev = json.loads((DATA / "data.json").read_text(encoding="utf-8"))
     except Exception: pass
+    try: fxs = fx_stats(fx, FX_USD) if status["fx"] == "ok" and FX_USD else None
+    except Exception as e: log("환율 통계 실패:", e); fxs = None
+    fxs = fxs or prev.get("fx_stats")
     fx_usd = ({"latest": FX_USD[-1], "series": FX_USD[-400:]} if FX_USD else prev.get("fx_usd"))
     if status["fx"] == "ok" and not FX_USD: status["fx_usd"] = "empty"
     try: infl = {"br": update_infl()}; status["infl"] = "ok"
@@ -185,7 +231,7 @@ def main():
     out = {"generated": datetime.now().astimezone().isoformat(timespec="seconds"), "status": status,
            "live": live, "live_info": live_info, "bonds": sorted(bonds, key=lambda b: (b["tipo"], b["venc"][-4:])),
            "series": series,
-           "fx": {"latest": fx[-1] if fx else None, "series": fx}, "fx_usd": fx_usd, "infl": infl}
+           "fx": {"latest": fx[-1] if fx else None, "series": fx}, "fx_usd": fx_usd, "fx_stats": fxs, "infl": infl}
     (DATA / "data.json").write_text(json.dumps(out, ensure_ascii=False), encoding="utf-8")
     log("data.json 생성 완료", status)
 

@@ -526,18 +526,23 @@ V.scen = m => {
     <div class=note>확률 합이 ${s.w}% 입니다${s.w !== 100 ? " — 가중평균으로 정규화했습니다." : "."} 확률·환율 가정은 설정 탭에서 바꿀 수 있습니다.</div></div></section>${polSection(m)}${realCmpSection(m)}`;
 };
 // ---------- 04-3 헤알채(PF32) vs 달러채 원화 실질 만기수익률 ----------
-const RC_DEF = [["헤알 강세", 3, 0], ["환율 변동 없음", 0, 0], ["헤알 완만 약세(10년 평균)", -3, 0], ["위기형(헤알 약세·달러 강세)", -7, 5]];
+// 기본값: 최근 5년(update.py fx_stats) 원화 기준 BRL/KRW·USD/KRW — cagr=연평균 변화율, up/down=롤링 1년 변화율의 강세·약세 구간 평균 (없으면 2026-10 기준 값)
+const FXS_DEF = {brl: {cagr: 3.99, up: 11.39, down: -6.42}, usd: {cagr: 2.42, up: 6.98, down: -2.48}, yrs: 5};
+const FXT_DEF = [{"c": "브라질", "who": "테메르(중도우파)", "from": "2016-10-20", "to": "2018-12-31", "brl": {"chg": -20.3, "cagr": -9.8}, "usd": {"chg": -1.9, "cagr": -0.9}}, {"c": "브라질", "who": "보우소나루(우파)", "from": "2019-01-01", "to": "2022-12-30", "brl": {"chg": -18.1, "cagr": -4.9}, "usd": {"chg": 12.3, "cagr": 3.0}}, {"c": "브라질", "who": "룰라(좌파)", "from": "2023-01-02", "to": "2026-10-16", "brl": {"chg": 10.1, "cagr": 2.6}, "usd": {"chg": 4.8, "cagr": 1.2}}, {"c": "미국", "who": "트럼프 1기(공화)", "from": "2017-01-20", "to": "2021-01-20", "brl": {"chg": -43.7, "cagr": -13.4}, "usd": {"chg": -6.3, "cagr": -1.6}}, {"c": "미국", "who": "바이든(민주)", "from": "2021-01-20", "to": "2025-01-20", "brl": {"chg": 15.3, "cagr": 3.6}, "usd": {"chg": 31.7, "cagr": 7.1}}, {"c": "미국", "who": "트럼프 2기(공화)", "from": "2025-01-20", "to": "2026-10-16", "brl": {"chg": 9.7, "cagr": 5.5}, "usd": {"chg": -8.2, "cagr": -4.8}}];   // 집권 기간별 환율(update.py fx_terms), 데이터에 없을 때 2026-10 기준 값
+const rcDef = () => { const f = D.fx_stats || FXS_DEF, b = f.brl, u = f.usd;
+  return [["강세형(헤알·달러 5년 강세구간 평균 = 원화 약세)", b.up, u.up], ["5년 연평균", b.cagr, u.cagr], ["헤알 약세(5년 약세구간 평균)·달러 연평균", b.down, u.cagr],
+    ["위험회피형(헤알 약세·달러 강세 = 원화 약세)", b.down, u.up], ["투자자 최악형(헤알·달러 동반 약세 = 원화 강세)", b.down, u.down]].map(c => [c[0], +c[1].toFixed(1), +c[2].toFixed(1)]); };
 function rcEdit(el) {
   const i = +el.dataset.i, j = +el.dataset.j, v = parseFloat(el.value); if (isNaN(v)) return;
-  if (!C.rc_cases) C.rc_cases = RC_DEF.map(c => c.slice());
-  C.rc_cases[i][j] = v;
+  if (!C.rc3) C.rc3 = rcDef();
+  C.rc3[i][j] = v;
   try { localStorage.setItem("pf32cfg", JSON.stringify(C)); } catch (e) {}
   if (LOCAL) fetch("/api/config", {method: "POST", body: JSON.stringify(C)}).catch(() => {});
   render(true);
 }
 function realCmpSection(m) {
   const r = polCalc(m), L = C.usd_bonds && C.usd_bonds.length ? C.usd_bonds : USD_DEF, b = L[Math.min(usdSel, L.length - 1)], kr = INF().kr;
-  const cases = C.rc_cases && C.rc_cases.length ? C.rc_cases : RC_DEF, inp = (i, j, v) => `<input type=number step=any data-i="${i}" data-j="${j}" value="${v}" style="width:56px;text-align:right" onchange="rcEdit(this)">`;
+  const cases = C.rc3 && C.rc3.length ? C.rc3 : rcDef(), inp = (i, j, v) => `<input type=number step=any data-i="${i}" data-j="${j}" value="${v}" style="width:56px;text-align:right" onchange="rcEdit(this)">`;
   const ann = (y, g) => ((1 + y / 100) * (1 + g / 100) - 1) * 100;
   const body = cases.map((c, ci) => {
     const rs = r.rows.map(x => {
@@ -547,12 +552,17 @@ function realCmpSection(m) {
     const ev = j => rs.reduce((a, o) => a + o.x.w * o.v[j], 0);
     const cell = (v, bi) => v.map((t, j) => `<td class=r ${j === bi ? 'style="font-weight:700"' : ""}>${pct(t, 1)}</td>`).join("");
     const bi = v => v.indexOf(Math.max(...v));
-    return rs.map((o, k) => `<tr${k === 0 ? ' style="border-top:2px solid var(--ink)"' : ""}>${k === 0 ? `<td rowspan=5 style="white-space:normal;min-width:150px;vertical-align:top"><b>${c[0]}</b><br><small>헤알 연 ${inp(ci, 1, c[1])}% · 달러 연 ${inp(ci, 2, c[2])}%</small></td>` : ""}<td style="white-space:normal">${o.x.name.split(" ")[0]} <small>${f2(o.x.w * 100, 0)}%</small></td><td class=r>${f2(o.x.yin, 2)}%</td><td class=r>${f2(b.ytm + o.x.sp / 100, 2)}%</td>${cell(o.v, bi(o.v))}</tr>`).join("")
+    return rs.map((o, k) => `<tr${k === 0 ? ' style="border-top:2px solid var(--ink)"' : ""}>${k === 0 ? `<td rowspan=5 style="white-space:normal;min-width:170px;vertical-align:top"><b>${c[0]}</b><br><small>헤알 연 ${inp(ci, 1, c[1])}% · 달러 연 ${inp(ci, 2, c[2])}%</small></td>` : ""}<td style="white-space:normal">${o.x.name.split(" ")[0]} <small>${f2(o.x.w * 100, 0)}%</small></td><td class=r>${f2(o.x.yin, 2)}%</td><td class=r>${f2(b.ytm + o.x.sp / 100, 2)}%</td>${cell(o.v, bi(o.v))}</tr>`).join("")
       + `<tr style="font-weight:700"><td>EV</td><td></td><td></td>${cell([ev(0), ev(1), ev(2)], bi([ev(0), ev(1), ev(2)]))}</tr>`;
   }).join("");
   return `<section><h2>04-3 헤알채(PF32) vs 달러표시 채권 — 원화 실질 만기수익률 비교</h2><div class=body>
-    <div class=note>확인 뒤 매수한 진입 YTM로 만기까지 보유할 때의 <b>연율 원화 실질 수익률</b>(한국 물가 ${f2(kr, 1)}% 차감). 달러채는 <b>${b.n}</b> 기준(04-2에서 종목 선택). 환율은 <b>진입 후 연 변동</b>이며 헤알=BRL/KRW, 달러=USD/KRW. 진입 전 환율 충격은 매수가에 이미 반영된 것으로 봅니다. 환율 가정은 입력칸에서 수정할 수 있습니다.</div>
+    <div class=note>확인 뒤 매수한 진입 YTM로 만기까지 보유할 때의 <b>연율 원화 실질 수익률</b>(한국 물가 ${f2(kr, 1)}% 차감). 달러채는 <b>${b.n}</b> 기준(04-2에서 종목 선택). 환율은 <b>진입 후 연 변동</b>이며 헤알=BRL/KRW, 달러=USD/KRW. 진입 전 환율 충격은 매수가에 이미 반영된 것으로 봅니다. 환율은 원화 기준 가격이라 <b>양수 = 해당 통화 강세(원화 약세), 음수 = 해당 통화 약세(원화 강세)</b>입니다. 달러채 투자자에게 불리한 쪽은 달러 연 변동이 음수일 때(원화 강세)입니다. 기본값은 최근 ${(D.fx_stats || FXS_DEF).yrs}년 원화 기준 실제 환율에서 계산했습니다(연평균 = 5년 전 대비 연 환산 변화율, 강세·약세 구간 평균 = 5년간 롤링 1년 변화율 중 오른 구간·내린 구간의 평균). 입력칸에서 수정할 수 있습니다. <button class=noprint onclick="delete C.rc3;try{localStorage.setItem('pf32cfg',JSON.stringify(C))}catch(e){};if(LOCAL)fetch('/api/config',{method:'POST',body:JSON.stringify(C)}).catch(()=>{});render(true)">기본값으로</button></div>
     <div class=tbl><table class=mono><thead><tr><th>환율 가정</th><th>시나리오</th><th class=r>PF32<br>진입 YTM</th><th class=r>달러채<br>진입 YTM</th><th class=r>PF32 100%<br><small>실질(원)</small></th><th class=r>5:5<br><small>실질(원)</small></th><th class=r>달러채 100%<br><small>실질(원)</small></th></tr></thead><tbody>${body}</tbody></table></div>
+    ${(() => { const T = (D.fx_stats && D.fx_stats.terms) || FXT_DEF, c = v => `<td class=r>${pct(v.chg, 1)}</td><td class=r>${pct(v.cagr, 1)}</td>`;
+      return `<h3 style="margin:14px 0 4px;font-size:14px">참고: 집권 진영별 실제 환율 (원화 기준, ECB·Frankfurter)</h3>
+      <div class=tbl><table class=mono><thead><tr><th>국가</th><th>집권 (진영)</th><th>기간</th><th class=r>헤알 BRL/KRW<br><small>기간 변화</small></th><th class=r><small>연환산</small></th><th class=r>달러 USD/KRW<br><small>기간 변화</small></th><th class=r><small>연환산</small></th></tr></thead><tbody>
+      ${T.map(t => `<tr><td>${t.c}</td><td style="white-space:normal">${t.who}</td><td>${t.from.slice(2, 7).replace("-", ".")}~${t.to.slice(2, 7).replace("-", ".")}</td>${c(t.brl)}${c(t.usd)}</tr>`).join("")}</tbody></table></div>
+      <div class=note>양수 = 해당 통화 강세(원화 약세). 진영과 환율의 <b>인과관계가 아닙니다</b> — 표본이 정권 3~4개뿐이고 같은 기간에 코로나, 달러 사이클, 원자재 가격, 원화 자체의 움직임이 크게 작용했습니다. 브라질 집권 기간 미국 정권이 겹치므로 두 표를 따로 해석하세요. 룰라 3기는 2023-01 취임 이후, 트럼프 2기는 2025-01 취임 이후 현재까지입니다.</div>`; })()}
     <div class=note>굵은 글씨 = 해당 행에서 가장 높은 구성. 5:5 = (PF32 원화 연수익 + 달러채 원화 연수익) ÷ 2 (재조정·이자 재투자 단순화) · 달러 수익 = 진입 YTM($)(미 국채금리 변동 없음 가정) · 가산금리 변동 가정은 04-2 입력표 · 예금 대비 비교: 예금 4.3%의 실질은 약 ${f2(real(4.3, kr), 1)}% · 세금·수수료·환전비용 미반영, 투자 권유 아님.</div>
   </div></section>`;
 }
@@ -601,7 +611,7 @@ V.settings = m => {
   </div></section>`;
 };
 
-const CFG_KEYS = ["stages", "stop_price", "stop_fx", "target_price", "braz2034_ytm", "scenarios", "extra_fx_rows", "fx_range", "infl", "pol", "usd_inc", "rc_cases"];
+const CFG_KEYS = ["stages", "stop_price", "stop_fx", "target_price", "braz2034_ytm", "scenarios", "extra_fx_rows", "fx_range", "infl", "pol", "usd_inc", "rc3"];
 async function exportCfg() {
   const o = {}; CFG_KEYS.forEach(k => { if (C[k] !== undefined) o[k] = C[k]; });
   const t = JSON.stringify(o);
