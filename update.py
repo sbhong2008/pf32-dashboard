@@ -174,6 +174,33 @@ def read_treasury(path):
 
 
 # ---------------------------------------------------------------- Investir CSV (사용자가 받은 라이브 스냅샷)
+INVESTIR_URL = "https://www.tesourodireto.com.br/documents/d/guest/rendimento-investir-csv?download=true"
+
+
+def fetch_investir():
+    """Tesouro Direto '투자하기' 가격표 CSV 를 직접 받아 data/inbox 에 저장(검증 통과 시에만 교체). 실패해도 기존 파일로 계속."""
+    inbox = DATA / "inbox"; inbox.mkdir(exist_ok=True)
+    tmp, dst = inbox / "rendimento-investir.csv.part", inbox / "rendimento-investir.csv"
+    try:
+        err = None
+        for i in range(3):
+            try:
+                with urllib.request.urlopen(urllib.request.Request(INVESTIR_URL, headers={"User-Agent": "Mozilla/5.0"}), timeout=30) as r:
+                    tmp.write_bytes(r.read())
+                break
+            except Exception as e:
+                err = e; time.sleep(5 * 3 ** i)
+        else:
+            raise err
+        rows = read_investir(tmp)   # 형식이 다르면 예외
+        if not any("Prefixado" in x["name"] for x in rows): raise ValueError("Prefixado 행 없음")
+        os.replace(tmp, dst)
+        log(f"Investir CSV 자동 다운로드: {len(rows)}종목")
+    except Exception as e:
+        log("Investir CSV 다운로드 실패(기존 파일 사용):", e)
+        tmp.unlink(missing_ok=True)
+
+
 def newest_investir():
     files = glob.glob(os.path.expanduser(CFG["downloads_glob"])) + glob.glob(str(DATA / "inbox" / "*.csv"))
     return max(files, key=os.path.getmtime) if files else None
@@ -227,13 +254,16 @@ def main():
         if p.exists(): hist = read_treasury(p)
 
     live, live_info = [], None
+    fetch_investir()
     ip = newest_investir()
     if ip:
         live = read_investir(ip)
         ts = datetime.fromtimestamp(os.path.getmtime(ip))
         live_info = {"file": os.path.basename(ip), "mtime": ts.isoformat(timespec="minutes"),   # 파일 수정 시각(이 기기 로컬)
                      "picked": datetime.now().astimezone().isoformat(timespec="seconds")}   # 자동 갱신이 이 파일을 집어간 시각
-        shutil.copy(ip, DATA / "snapshots" / f"rendimento-investir_{ts:%Y-%m-%d_%H%M}.csv")
+        snaps = sorted((DATA / "snapshots").glob("rendimento-investir_*.csv"))
+        if not snaps or snaps[-1].read_bytes() != Path(ip).read_bytes():   # 내용이 같으면 스냅샷 중복 저장 안 함
+            shutil.copy(ip, DATA / "snapshots" / f"rendimento-investir_{ts:%Y-%m-%d_%H%M}.csv")
         log(f"Investir 스냅샷: {live_info['file']} ({live_info['mtime']})")
 
     def tk(c): return f"{c['tipo']}|{c['venc']}"
