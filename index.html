@@ -176,6 +176,7 @@ async function load() {
   C = await jget("config.json");
   const loc = await jget("config.local.json"); if (loc) C = {...C, ...loc};   // 개인 설정(로컬 서버 전용, git 제외)
   const ls = lsGet("pf32cfg"); if (ls) C = {...C, ...ls};                    // 이 기기 브라우저 설정
+  delete C.stop_price;                                                     // 가격 STOP 폐지(원화 실질 손절 기준으로 대체) — 기기에 남은 옛 값 무시
   const lv = lsGet("pf32live");                                              // 직접 올린 Investir CSV
   if (lv && (!D.live_info || lv.info.mtime >= D.live_info.mtime)) { D.live = lv.rows; D.live_info = lv.info; }
   render();
@@ -567,6 +568,11 @@ function stopEdit(el) {
   if (LOCAL) fetch("/api/config", {method: "POST", body: JSON.stringify(C)}).catch(() => {});
   render(true);
 }
+function stopPf(m) {   // 원화 실질 손절 기준(SR) 대비 PF32 상태: 환율 가정 3종(불변·5년 연평균·헤알 약세) 최악값, 한계 환율 변동
+  const kN = INF().kr, sr = SR(), cs = C.rc3 && C.rc3.length ? C.rc3 : rcDef(), gs = [0, ...[1, 2].map(i => cs[i] ? cs[i][1] : null).filter(v => v != null)];
+  const vals = gs.map(g => real(((1 + m.ytm / 100) * (1 + g / 100) - 1) * 100, kN)), lim = ((1 + sr / 100) * (1 + kN / 100) / (1 + m.ytm / 100) - 1) * 100;
+  return {sr, worst: Math.min(...vals), lim, limFx: m.fx * (1 + lim / 100)};
+}
 function buyReset() { delete C.buy_real; delete C.stop_real; try { localStorage.setItem("pf32cfg", JSON.stringify(C)); } catch (e) {} if (LOCAL) fetch("/api/config", {method: "POST", body: JSON.stringify(C)}).catch(() => {}); render(true); }
 function buySignals(m) {
   const brI = inflBR().v, kr = INF(), u = usdEst(m), yU = u.ok ? u.last.y : u.b.ytm, pU = u.ok ? u.last.p : u.b.px;
@@ -732,7 +738,7 @@ V.stages = m => {
   const hasPx = C.stages.some(s => s.price > 0), nx = m.next && m.next.price > 0;
   const gap = nx ? m.price - m.next.price : null;
   const reached = nx && m.price <= m.next.price;
-  const stopBuf = m.price - C.stop_price, up = (C.target_price / m.price - 1) * 100;
+  const sp = stopPf(m), up = (C.target_price / m.price - 1) * 100;
   return `<section><h2>02 분할매수 ${C.stages.length}-STAGE — ${m.filledPct}% FILLED</h2><div class=body>
     <div class=bar>${bar}</div>
     ${!hasPx ? `<div class=warn>체결가·지정가가 비어 있습니다. <b>설정</b> 탭에서 입력하세요 (이 기기 브라우저에만 저장, 서버·GitHub로 전송되지 않음).</div>` : ""}
@@ -741,7 +747,7 @@ V.stages = m => {
     <div class=grid style="margin-top:10px">
       <div class=card><small>현재 평균 (체결분)</small><b class=mono>${f2(m.avg)}</b><div class=note>체결 ${m.filledPct}% 가중평균 · ${m.avg ? "현재가 대비 " + pct((m.price / m.avg - 1) * 100) : "체결가 미입력"}</div></div>
       <div class=card><small>${m.next ? "다음 체결 시 최종 평균" : "최종 평균"}</small><b class=mono>${f2(m.avgAll)}</b><div class=note>모든 단계가 지정가에 체결된다고 가정 (${total_}%)</div></div>
-      <div class=card><small>리스크 STOP</small><b class=mono>${C.stop_price > 0 ? f2(C.stop_price) : "—"}</b><div class=note>${C.stop_price > 0 ? "현재가 대비 버퍼 " + f2(stopBuf) + " BRL" : "미설정"} · FX ${C.stop_fx} 이탈 시 정리 검토${m.fx ? " (현재 " + f2(m.fx) + ")" : ""}</div></div>
+      <div class="card" style="${sp.worst < sp.sr ? "border:2px solid var(--bad)" : ""}"><small>손절 기준 · 원화 실질</small><b class=mono>${f2(sp.sr, 1)}%</b><div class=note>PF32 최악 환율 가정 <span style="font-weight:700">${pct(sp.worst, 1)}</span> ${sp.worst < sp.sr ? '<span class=neg style="font-weight:700">⚠ 미달</span>' : '<span class=pos style="font-weight:700">✔ 충족</span>'} · 헤알이 연 <span style="font-weight:700">${pct(sp.lim, 1)}</span> 아래(1년 뒤 BRL/KRW ≈ ${f2(sp.limFx, 1)})면 미달${C.stop_fx > 0 && m.fx ? ` · STOP 환율 ${f2(C.stop_fx)}(현재 대비 ${pct((C.stop_fx / m.fx - 1) * 100, 1)})` : ""} · 상세는 01 탭</div></div>
       <div class=card><small>수익 TARGET</small><b class=mono>${C.target_price > 0 ? f2(C.target_price) : "—"}</b><div class=note>${C.target_price > 0 ? "현재가 대비 " + pct(up) : "미설정"}</div></div>
     </div>
     <div class=note>※ 평균 체결가는 설정의 체결가 × 비중으로 직접 계산합니다.</div>
@@ -915,10 +921,9 @@ V.bonds = m => {
 
 V.settings = m => {
   const st = C.stages.map((s, i) => `<tr><td>${s.name}</td><td><input type=number step=any data-k="stages.${i}.pct" value="${s.pct}"></td><td><input type=number step=any data-k="stages.${i}.price" value="${s.price}"></td><td><input data-k="stages.${i}.date" value="${s.date || ""}"></td><td><input type=checkbox data-k="stages.${i}.filled" ${s.filled ? "checked" : ""}></td></tr>`).join("");
-  return `<section><h2>설정 — 분할매수·STOP·TARGET (이 기기 브라우저에 저장)</h2><div class=body>
+  return `<section><h2>설정 — 분할매수·STOP 환율·TARGET (이 기기 브라우저에 저장)</h2><div class=body>
     <div class=tbl><table><thead><tr><th>단계</th><th>비중%</th><th>지정가/체결가</th><th>날짜</th><th>체결</th></tr></thead><tbody>${st}</tbody></table></div>
-    <div class=kv style="margin:10px 0"><label>STOP 가격</label><input type=number step=any data-k="stop_price" value="${C.stop_price}">
-      <label>STOP 환율</label><input type=number step=any data-k="stop_fx" value="${C.stop_fx}">
+    <div class=kv style="margin:10px 0"><label>STOP 환율</label><input type=number step=any data-k="stop_fx" value="${C.stop_fx}">
       <label>익절 TARGET</label><input type=number step=any data-k="target_price" value="${C.target_price}"></div>
     <p><button class=pri onclick="saveCfg()">저장</button> <span id=saved class=note></span></p>
     <p><button onclick="exportCfg()">📋 설정 복사</button> <button onclick="importCfg()">📥 설정 붙여넣기</button> <span class=note>다른 기기(폰)로 옮길 때: 한 기기에서 복사 → 메신저 '나에게 보내기' 등으로 전달 → 다른 기기에서 붙여넣기. 설정은 서버·GitHub에 올라가지 않고 각 기기 브라우저에만 저장됩니다.</span></p>
@@ -926,7 +931,7 @@ V.settings = m => {
   </div></section>`;
 };
 
-const CFG_KEYS = ["stages", "stop_price", "stop_fx", "target_price", "extra_fx_rows", "fx_range", "buy_real", "stop_real", "pol", "usd_inc", "rc3"];
+const CFG_KEYS = ["stages", "stop_fx", "target_price", "extra_fx_rows", "fx_range", "buy_real", "stop_real", "pol", "usd_inc", "rc3"];
 async function exportCfg() {
   const o = {}; CFG_KEYS.forEach(k => { if (C[k] !== undefined) o[k] = C[k]; });
   const t = JSON.stringify(o);
