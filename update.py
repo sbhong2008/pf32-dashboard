@@ -128,6 +128,30 @@ def ecos_expect():
     return out
 
 
+UST_URL = "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/{y}/all?type={t}&field_tdr_date_value={y}&page&_format=csv"
+
+
+def _ust(t, y):
+    req = urllib.request.Request(UST_URL.format(t=t, y=y), headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(req, timeout=60) as r:
+        return {x["Date"]: {k.upper(): v for k, v in x.items()} for x in csv.DictReader(r.read().decode("utf-8-sig").splitlines())}   # 열 이름 대소문자가 파일마다 다름(5 Yr / 5 YR)
+
+
+def us_breakeven():
+    """미 재무부 일별 명목·실질(TIPS) 국채금리(키 불필요)로 5·7년 손익분기 인플레이션 = 명목 − 실질. 최신 공통일, 5·7년 단순 평균."""
+    y = date.today().year
+    for yy in (y, y - 1):   # 연초에는 올해 행이 없을 수 있음
+        nom, real = _ust("daily_treasury_yield_curve", yy), _ust("daily_treasury_real_yield_curve", yy)
+        days = sorted((d for d in nom if d in real and nom[d].get("5 YR") and real[d].get("5 YR") and nom[d].get("7 YR") and real[d].get("7 YR")),
+                      key=lambda d: datetime.strptime(d, "%m/%d/%Y"))
+        if days: break
+    else: raise ValueError("재무부 금리 데이터 없음")
+    d = days[-1]; b5 = float(nom[d]["5 YR"]) - float(real[d]["5 YR"]); b7 = float(nom[d]["7 YR"]) - float(real[d]["7 YR"])
+    out = {"v": round((b5 + b7) / 2, 3), "y5": round(b5, 3), "y7": round(b7, 3), "period": datetime.strptime(d, "%m/%d/%Y").strftime("%Y-%m-%d")}
+    log("미 국채 손익분기 인플레이션:", out)
+    return out
+
+
 def update_infl_kus():
     """한국·미국 소비자물가 전년동월비(OECD SDMX, 키 불필요). 최신월 값 + 최근 13개월 이력. 한 나라가 실패하면 예외."""
     out = {}
@@ -137,14 +161,20 @@ def update_infl_kus():
             rows = list(csv.DictReader(r.read().decode("utf-8-sig").splitlines()))
         ser = sorted((x["TIME_PERIOD"], round(float(x["OBS_VALUE"]), 3)) for x in rows if x["OBS_VALUE"])
         if not ser: raise ValueError(f"OECD CPI {c} 데이터 없음")
-        out[key] = {"v": ser[-1][1], "period": ser[-1][0], "series": ser, "src": "OECD CPI 전년동월비", "label": "OECD " + ser[-1][0]}
-        log(f"{c} 물가(전년동월비) {ser[-1][0]}: {ser[-1][1]}%")
+        a12 = round(sum(v for _, v in ser[-12:]) / len(ser[-12:]), 3)   # 12개월 평균 = 1순위 소스 실패 시 대체값
+        out[key] = {"v": a12, "period": ser[-1][0], "series": ser, "src": "OECD CPI 12개월 평균", "label": "OECD 12개월 평균 " + ser[-1][0],
+                    "cpi": {"v": ser[-1][1], "period": ser[-1][0]}}
+        log(f"{c} 물가 전년동월비 {ser[-1][0]}: {ser[-1][1]}% · 12개월 평균 {a12}%")
     try:   # 한국은 향후 기대 물가(3년 후)를 기본값으로, 최근 CPI 는 참고(cpi)
         e = ecos_expect()
-        out["kr"].update(cpi={"v": out["kr"]["v"], "period": out["kr"]["period"]}, exp=e, v=e["y3"]["v"], period=e["y3"]["period"],
-                         src="ECOS 3년후 기대인플레이션율", label="ECOS 3년후 기대 " + e["y3"]["period"])
+        out["kr"].update(exp=e, v=e["y3"]["v"], period=e["y3"]["period"], src="ECOS 3년후 기대인플레이션율", label="ECOS 3년후 기대 " + e["y3"]["period"])
     except Exception as ex:
-        log("ECOS 기대인플레이션 실패(OECD 전년동월비로 대체):", ex)
+        log("ECOS 기대인플레이션 실패(OECD 12개월 평균으로 대체):", ex)
+    try:   # 미국은 시장 기대(손익분기 인플레이션 = 명목 − TIPS 실질금리, 5·7년 평균 ≈ PF32 잔존 기간)
+        b = us_breakeven()
+        out["us"].update(bei=b, v=b["v"], period=b["period"], src="미 국채 손익분기 인플레이션(5·7년 평균)", label="미 국채 BEI(5·7년) " + b["period"])
+    except Exception as ex:
+        log("미 국채 BEI 실패(OECD 12개월 평균으로 대체):", ex)
     return out
 
 
