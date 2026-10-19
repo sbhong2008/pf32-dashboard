@@ -38,8 +38,14 @@ def dmy(s):
 def update_fx():
     start = (date.today() - timedelta(days=365 * 10)).isoformat()
     req = urllib.request.Request(FX_URL.format(start=start), headers=UA)
-    with urllib.request.urlopen(req, timeout=60) as r:
-        j = json.load(r)
+    for i in range(4):  # 일시 오류 대비 재시도(5·15·45초 대기)
+        try:
+            with urllib.request.urlopen(req, timeout=60) as r:
+                j = json.load(r)
+            break
+        except Exception as e:
+            if i == 3: raise
+            log(f"FX 재시도 {i + 1}: {e}"); time.sleep(5 * 3 ** i)
     rows = sorted((d, v["KRW"]) for d, v in j["rates"].items())
     FX_USD[:] = sorted((d, v["USD"]) for d, v in j["rates"].items() if "USD" in v)
     with open(DATA / "fx_brlkrw.csv", "w", newline="") as f:

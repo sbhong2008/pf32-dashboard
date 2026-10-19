@@ -2,6 +2,7 @@ name: update-data
 on:
   schedule:
     - cron: "30 22 * * *"  # 매일 22:30 UTC = 07:30 KST(다음 날). cron은 UTC 기준. ECB 환율(유럽 오후 4시경 발표)·Tesouro 일일 갱신 이후 → 전 영업일 값까지 반영
+    - cron: "30 10 * * *"  # 보조 실행 19:30 KST — 아침 실행 실패·지연 만회
   workflow_dispatch:
 permissions:
   contents: write
