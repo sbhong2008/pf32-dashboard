@@ -9,8 +9,8 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <title>PF32 Dashboard</title>
 <style>
-:root{--bg:#e8e8e8;--paper:#fff;--ink:#000;--soft:#f3f3f1;--line:rgba(0,0,0,.18);--up:#000}
-@media (prefers-color-scheme:dark){:root{--bg:#111;--paper:#1b1b1b;--ink:#f2f2f2;--soft:#262626;--line:rgba(255,255,255,.22)}}
+:root{--bg:#e8e8e8;--paper:#fff;--ink:#000;--soft:#f3f3f1;--line:rgba(0,0,0,.18);--up:#000;--ok:#1a7f37;--okbg:rgba(34,160,70,.16);--bad:#c0392b;--badbg:rgba(192,57,43,.10)}
+@media (prefers-color-scheme:dark){:root{--bg:#111;--paper:#1b1b1b;--ink:#f2f2f2;--soft:#262626;--line:rgba(255,255,255,.22);--ok:#4cc26a;--okbg:rgba(76,194,106,.2);--bad:#ff6b5e;--badbg:rgba(255,107,94,.14)}}
 *{box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
 body{margin:0;background:var(--bg);color:var(--ink);font-size:13px}
 .mono,.mono *{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
@@ -43,6 +43,24 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}
 .bar>.f{background:var(--ink);color:var(--paper)}
 .warn{border:1px dashed var(--ink);padding:6px 8px;margin-top:8px;font-size:12px}
 .note{font-size:11px;opacity:.7;margin-top:6px;line-height:1.5}
+.hero{background:var(--ink);color:var(--paper);padding:12px 14px;display:flex;gap:6px 26px;align-items:flex-end;flex-wrap:wrap}
+.hero small{display:block;opacity:.7;font-size:10px;letter-spacing:.08em;margin-bottom:2px}
+.hero .big{font-size:36px;font-weight:900;line-height:1}
+.hero .mid{font-size:22px;font-weight:800;line-height:1.1}
+.callout{border:2px solid var(--ink);padding:9px 12px;margin:10px 0;font-size:14px;line-height:1.55}
+.callout.go{border-color:var(--ok);background:var(--okbg)}
+.callout.bad{border-color:var(--bad);background:var(--badbg)}
+.callout.sum{background:var(--soft)}
+.pos{color:var(--ok)}.neg{color:var(--bad)}
+.subnav{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 10px}
+.subnav button{font-size:11px;padding:3px 9px}
+details.fold{border:1px solid var(--ink);margin:10px 0;padding:0}
+details.fold>summary{cursor:pointer;padding:7px 10px;font-weight:700;font-size:12px;background:var(--soft);list-style:none}
+details.fold>summary::before{content:"▸ "}details.fold[open]>summary::before{content:"▾ "}
+details.fold>div{padding:8px 10px}
+tr.hl td{background:var(--soft)}
+tr.hl-bad td{background:var(--badbg)}
+@media (max-width:560px){.tbl td:first-child,.tbl th:first-child{min-width:74px}.hero .big{font-size:32px}}
 .rng{position:relative;height:18px;border:1px solid var(--ink);margin:14px 0 4px}
 .rng i{position:absolute;top:-6px;bottom:-6px;width:3px;background:var(--ink)}
 .rng em{position:absolute;top:18px;font-size:10px;font-style:normal;transform:translateX(-50%);white-space:nowrap}
@@ -86,7 +104,7 @@ const pct = (n, d = 2) => n == null || isNaN(n) ? "—" : (n >= 0 ? "+" : "") + 
 const brDate = iso => iso ? iso.slice(8) + "/" + iso.slice(5, 7) + "/" + iso.slice(0, 4) : "—";
 let D, C, tab = localStorage.getItem("tab") || "overview";
 
-const TABS = [["overview","01 최신변동"],["stages","02 분할매수"],["fx","03 환율"],["scen","04 시나리오"],["port","05 5:5 포트폴리오"],["bonds","06 국채 전체"],["settings","설정"]];
+const TABS = [["overview","01 최신변동"],["stages","02 분할매수"],["fx","03 환율"],["scen","04 시나리오"],["port","05 헤알·달러·5:5 비교"],["bonds","06 국채 전체"],["settings","설정"]];
 
 const LOCAL = ["127.0.0.1", "localhost"].includes(location.hostname);
 async function jget(u) { try { const r = await fetch(u + "?" + Date.now()); return r.ok ? await r.json() : null; } catch (e) { return null; } }
@@ -169,17 +187,16 @@ const total = (ytmPct, fxFrom, fxTo) => ((1 + ytmPct / 100) * (fxTo / fxFrom) - 
 
 // ---------- 실질수익률 (인플레 제거, 피셔 방정식) ----------
 const real = (nomPct, inflPct) => ((1 + nomPct / 100) / (1 + inflPct / 100) - 1) * 100;
-const INF = () => {   // 한국·미국 물가: 설정값이 0(미입력)이면 자동값(한국 ECOS 기대인플레이션·미국 국채 BEI), 없으면 2.0/2.5
-  const o = Object.assign({kr: 0, us: 0, br_manual: 0, usdkrw_assume: 0}, C.infl || {}), A = (D.infl) || {};
-  const pick = (k, dflt) => +o[k] > 0 ? [+o[k], "설정값"] : A[k] && A[k].v != null ? [A[k].v, A[k].label || "OECD " + A[k].period] : [dflt, "기본값"];
+const INF = () => {   // 한국·미국 물가는 항상 자동값(한국 ECOS 기대인플레이션 · 미국 국채 BEI, 실패 시 OECD 12개월 평균), 자료 없으면 2.0/2.5
+  const A = D.infl || {}, pick = (k, dflt) => A[k] && A[k].v != null ? [A[k].v, A[k].label || "OECD " + A[k].period] : [dflt, "기본값"];
   const kr = pick("kr", 2.0), us = pick("us", 2.5);
-  return Object.assign(o, {kr: kr[0], us: us[0], kr_src: kr[1], us_src: us[1]});
+  return {kr: kr[0], us: us[0], kr_src: kr[1], us_src: us[1]};
 };
 
 // ---------- 정치·재정 시나리오 (PF32 고정금리 vs Selic 연동 vs IPCA+) ----------
 // 기본값은 2018·2022 선거, 2024 재정 충격 때의 실제 움직임을 참고한 '가정'이며 예측이 아님. 모두 이 탭에서 직접 수정 가능
 const POL_DEF = {
-  sel_now: 13.75, sel_spread: 0.0979, ipca_real: 6.83, ipca_venc: "15/08/2032", horizon_note: "10/25 결과 확인 후 매수 → 12개월 보유 후 매도",
+  sel_spread: 0.0979, ipca_real: 6.83, ipca_venc: "15/08/2032",
   sc: [
     {name: "S1 우파 승리 + 재정 신뢰 회복", side: "우파", prob: 31, dy: -60, sel: 12.3, ipca: 3.8, dr: -30, fx: 5, dy2: -10, dr2: -5, fx2: 1, sp: -25},
     {name: "S2 우파 승리, 개혁 지연(이미 반영)", side: "우파", prob: 47, dy: 0, sel: 12.9, ipca: 4.3, dr: 0, fx: 0, dy2: 0, dr2: 0, fx2: 0, sp: 0},
@@ -215,7 +232,7 @@ function polCalc(m) {
   const pLula = side("룰라").reduce((a, r) => a + r.w, 0) * 100;
   return {P, rows, evB, evK, evKpre, evBest, evKR: evK.map(v => real(v, kr)), be, pLula, Dpf, Dip, ipReal, selSp, tw, srcIp: ip ? "CSV" : "기본값", srcSl: sl ? "CSV" : "기본값"};
 }
-let showPolRef = false, polSel = 1;
+let showPolRef = false, polSel = 1, polOpen = false;
 function polEdit(el) {
   const path = el.dataset.k.split("."), v = el.type === "number" ? parseFloat(el.value) : el.value;
   if (el.type === "number" && isNaN(v)) return;
@@ -228,6 +245,8 @@ function polEdit(el) {
 function polReset() { delete C.pol; try { localStorage.setItem("pf32cfg", JSON.stringify(C)); } catch (e) {} if (LOCAL) fetch("/api/config", {method: "POST", body: JSON.stringify(C)}).catch(() => {}); render(); }
 // ---------- 달러표시 브라질 채권 (수동 입력 시세, 설정 usd_bonds 로 덮어쓰기 가능) ----------
 const USD_ASOF = "10/14";
+const usdAge = () => { const y = new Date(D.generated).getFullYear() || new Date().getFullYear(); return Math.floor((Date.now() - new Date(`${y}-${USD_ASOF.replace("/", "-")}`).getTime()) / 864e5); };
+const usdStale = () => usdAge() > 3 ? ` <b style="color:#c0392b">⚠ 시세 ${usdAge()}일 경과 — 매수 전 호가 재확인</b>` : "";
 const USD_DEF = [
   {n: "Brazil 6.25% 2031", cpn: 6.25, mat: "2031.03.18", px: 101.67, ytm: 5.82, sp: 84, dur: 3.81},
   {n: "Brazil 3.75% 2031", cpn: 3.75, mat: "2031.09.12", px: 90.97, ytm: 5.89, sp: 90, dur: 4.36},
@@ -243,16 +262,16 @@ function usdEdit(el) {
   if (LOCAL) fetch("/api/config", {method: "POST", body: JSON.stringify(C)}).catch(() => {});
   render(true);
 }
-function usdRows(r, m) {   // 04-2 와 같은 공식: 선택 달러채의 시나리오별 원화 12개월 수익 · 5:5
+function usdRows(r, m) {   // 04-1 와 같은 공식: 선택 달러채의 시나리오별 원화 12개월 수익 · 5:5
   const L = C.usd_bonds && C.usd_bonds.length ? C.usd_bonds : USD_DEF, b = L[Math.min(usdSel, L.length - 1)];
-  const usd = D.fx_usd && D.fx_usd.latest ? D.fx_usd.latest[1] : null, now = usd ? m.fx / usd : null, as = INF().usdkrw_assume;
-  const g = as > 0 && now ? (as / now - 1) * 100 : 0;
+  const usd = D.fx_usd && D.fx_usd.latest ? D.fx_usd.latest[1] : null, now = usd ? m.fx / usd : null;
+  const g = 0;   // 진입 후 USD/KRW 변동은 가정하지 않음(변동은 04-2 환율 가정표에서)
   return {b, g, rows: r.rows.map(x => { const y = b.ytm + x.sp / 100, k = ((1 + y / 100) * (1 + g / 100) - 1) * 100, pf = x.krwP[0]; return {x, y, pf, k, mix: (pf + k) / 2}; })};
 }
 function usdSection(r, m) {
   const L = C.usd_bonds && C.usd_bonds.length ? C.usd_bonds : USD_DEF, b = L[Math.min(usdSel, L.length - 1)], kr = INF().kr;
-  const usd = D.fx_usd && D.fx_usd.latest ? D.fx_usd.latest[1] : null, now = usd ? m.fx / usd : null, as = INF().usdkrw_assume;
-  const g = as > 0 && now ? (as / now - 1) * 100 : 0;
+  const usd = D.fx_usd && D.fx_usd.latest ? D.fx_usd.latest[1] : null, now = usd ? m.fx / usd : null;
+  const g = 0;   // 진입 후 USD/KRW 변동은 가정하지 않음(변동은 04-2 환율 가정표에서)
   const rows = r.rows.map(x => {
     const y = b.ytm + x.sp / 100, px = b.px * (1 - b.dur * x.sp / 10000), k = ((1 + y / 100) * (1 + g / 100) - 1) * 100, pf = x.krwP[0];
     return {x, y, px, k, mix: (pf + k) / 2, be: ((1 + pf / 100) / (1 + y / 100) - 1) * 100};
@@ -263,14 +282,14 @@ function usdSection(r, m) {
   const inc = px => { const ann = usdAmt / (px / 100) * b.cpn / 100 * gf; return {ann, semi: ann / 2, mo: ann / 12, net: ann / 12 * (1 - I.tax / 100)}; };
   const iw = v => f2(v, 1) + "만";
   const incRows = [{lab: "현재가 매수(충격 전)", px: b.px}, ...rows.map(o => ({lab: o.x.name.split(" ")[0] + " 확인 후 매수", px: o.px}))];
-  const incHtml = `<h3 style="margin:14px 0 4px;font-size:14px">달러채 이자(배당) 계산 — ${b.n}</h3>
+  const incHtml = `<h3 id=s041inc style="margin:14px 0 4px;font-size:14px">달러채 이자(배당) 계산 — ${b.n}</h3>
     <div class=kv style="margin:6px 0"><label>투자금 합계(만원)</label><input type=number step=any data-k="amt" value="${I.amt}" onchange="usdEdit(this)">
       <label>달러채 비중 %(100=전액, 50=5:5)</label><input type=number step=any data-k="share" value="${I.share}" onchange="usdEdit(this)">
       <label>이자 세율 %</label><input type=number step=any data-k="tax" value="${I.tax}" onchange="usdEdit(this)"></div>
     <div class=tbl><table class=mono><thead><tr><th>매수 시점 가정</th><th class=r>매수가</th><th class=r>이자수익률<br><small>표면금리÷가격</small></th><th class=r>연 이자<br><small>세전</small></th><th class=r>6개월 지급<br><small>${mm}월·${m2}월 세전</small></th><th class=r>월 환산<br><small>세전</small></th><th class=r>월 환산<br><small>세후</small></th></tr></thead><tbody>
     ${incRows.map(o => { const c = inc(o.px); return `<tr><td style="white-space:normal">${o.lab}</td><td class=r>${f2(o.px, 2)}</td><td class=r>${f2(b.cpn / o.px * 100, 2)}%</td><td class=r>${iw(c.ann)}</td><td class=r>${iw(c.semi)}</td><td class=r>${iw(c.mo)}</td><td class=r><b>${iw(c.net)}</b></td></tr>`; }).join("")}</tbody></table></div>
     <div class=note>달러채 투자액 ${f2(usdAmt, 0)}만원 (투자금 ${f2(I.amt, 0)}만원 × ${f2(I.share, 0)}%) · 금액 단위 만원 · <b>PF32는 이자가 없어</b>(제로쿠폰, 만기 일시 수령) 나머지 비중의 월 현금흐름은 0 · 이자는 연 2회(${mm}월·${m2}월)라 '월 환산'은 12개월 평균이며 실제 지급은 6개월마다 몰립니다 · 표면금리는 고정이라 충격 후 매수하면 같은 금액으로 액면을 더 사서 이자가 늘고, 이미 보유 중이면 이자는 그대로(가격만 하락) · USD/KRW 변동 ${f2(g, 1)}% 반영 · 세율 ${f2(I.tax, 1)}%는 가정치, 종합과세 등은 미반영 · 가격이 100 미만이면 만기 상환차익은 이자에 포함하지 않았습니다.</div>`;
-  return `<h3 style="margin:14px 0 4px;font-size:14px">달러표시 브라질 국채 (Global bond) — PF32와 비교 (시세 ${USD_ASOF} 기준·수동)</h3>
+  return `<h3 id=s041usd style="margin:14px 0 4px;font-size:14px">달러표시 브라질 국채 (Global bond) — PF32와 비교 (시세 ${USD_ASOF} 기준·수동)${usdStale()}</h3>
     <div class=tbl><table class=mono><thead><tr><th>종목</th><th class=r>표면금리</th><th>만기</th><th class=r>가격</th><th class=r>만기수익률</th><th class=r>미 국채 대비<br>가산금리</th><th class=r>수정듀레이션</th></tr></thead><tbody>
     ${L.map((o, i) => `<tr${i === usdSel ? ' style="font-weight:700"' : ""}><td>${o.n}</td><td class=r>${f2(o.cpn, 3)}%</td><td>${o.mat}</td><td class=r>${f2(o.px, 2)}</td><td class=r>${f2(o.ytm, 2)}%</td><td class=r>${f2(o.sp, 0)}bp</td><td class=r>${f2(o.dur, 2)}</td></tr>`).join("")}</tbody></table></div>
     <div class=note>PF32(R$ 고정금리 ${f2(m.ytm)}%)와 달리 이 채권들은 <b>달러 수익률 ${f2(L[0].ytm, 1)}~${f2(L[L.length - 1].ytm, 1)}%</b>이고 환위험은 BRL/KRW가 아니라 <b>USD/KRW</b>입니다. 브라질 정치 충격이 와도 헤알 약세는 직접 맞지 않고 <b>가산금리 확대</b>(가정)만 반영됩니다. PF32는 헤알 약세 위험을 지는 대신 만기수익률이 이 종목보다 약 ${f2(m.ytm - b.ytm, 1)}%p 높습니다.</div>
@@ -279,19 +298,24 @@ function usdSection(r, m) {
     ${rows.map(o => `<tr><td style="white-space:normal">${o.x.name.split(" ")[0]} <small>${f2(o.x.w * 100, 0)}%</small></td><td class=r>${o.x.sp > 0 ? "+" : ""}${f2(o.x.sp, 0)}bp</td><td class=r>${f2(o.y, 2)}%</td><td class=r>${f2(o.px, 2)}</td><td class=r><b>${pct(o.k, 1)}</b></td><td class=r>${pct(o.x.krwP[0], 1)}</td><td class=r>${pct(o.k - o.x.krwP[0], 1)}</td><td class=r>${pct(o.be, 1)}</td><td class=r>${pct(o.mix, 1)}</td></tr>`).join("")}
     <tr style="border-top:2px solid var(--ink)"><td><b>기대값 EV</b></td><td></td><td></td><td></td><td class=r><b>${pct(ev(o => o.k), 1)}</b></td><td class=r>${pct(ev(o => o.x.krwP[0]), 1)}</td><td class=r>${pct(ev(o => o.k - o.x.krwP[0]), 1)}</td><td></td><td class=r>${pct(ev(o => o.mix), 1)}</td></tr>
     <tr><td>EV 실질(원)</td><td colspan=3></td><td class=r>${pct(real(ev(o => o.k), kr), 1)}</td><td class=r>${pct(real(ev(o => o.x.krwP[0]), kr), 1)}</td><td colspan=2></td><td class=r>${pct(real(ev(o => o.mix), kr), 1)}</td></tr></tbody></table></div>
-    <div class=note>계산: 진입 YTM($) = 현재 ${f2(b.ytm, 2)}% + 가산금리 변동(미 국채금리 변동 없음 가정) · 가격 = ${f2(b.px, 2)} × (1 − 듀레이션 ${f2(b.dur, 2)} × 변동) · 12개월 달러 수익 ≈ 진입 YTM(진입 후 추가 변동 없음) · 원화 = (1+달러 수익)×(1+USD/KRW 변동 ${f2(g, 1)}%${as > 0 ? "(설정 가정)" : "(변동 없음 가정, 설정 탭 USD/KRW 가정으로 변경)"}) − 1 · '동률 USD/KRW 변동'은 BRAZ 원화 수익이 PF32와 같아지는 달러 환율 변동(이보다 달러가 약해지면 PF32 우위). 가산금리 변동은 2018·2022·2024 반응을 참고한 <b>가정</b>이며 위 표에서 수정 가능. 가격·수익률은 직접 입력한 시세라 매수 전 증권사 호가로 확인하세요. 세금·수수료·환전비용 미반영.</div>${incHtml}`;
+    <div class=note>계산: 진입 YTM($) = 현재 ${f2(b.ytm, 2)}% + 가산금리 변동(미 국채금리 변동 없음 가정) · 가격 = ${f2(b.px, 2)} × (1 − 듀레이션 ${f2(b.dur, 2)} × 변동) · 12개월 달러 수익 ≈ 진입 YTM(진입 후 추가 변동 없음) · 원화 = (1+달러 수익)×(1+USD/KRW 변동 ${f2(g, 1)}%(변동 없음 가정, 환율 변동은 04-2)) − 1 · '동률 USD/KRW 변동'은 BRAZ 원화 수익이 PF32와 같아지는 달러 환율 변동(이보다 달러가 약해지면 PF32 우위). 가산금리 변동은 2018·2022·2024 반응을 참고한 <b>가정</b>이며 위 표에서 수정 가능. 가격·수익률은 직접 입력한 시세라 매수 전 증권사 호가로 확인하세요. 세금·수수료·환전비용 미반영.</div>${incHtml}`;
 }
 function polSection(m) {
   const r = polCalc(m), P = r.P, inp = (k, v, w = 68) => `<input type=number step=any data-k="${k}" value="${v}" style="width:${w}px;text-align:right" onchange="polEdit(this)">`;
   const names = ["PF32(고정)", "Selic 연동", "IPCA+ 2032"];
   const best = arr => arr.indexOf(Math.max(...arr));
   const cell = (arr, bi) => arr.map((v, j) => `<td class=r ${j === bi ? 'style="font-weight:700"' : ""}>${pct(v, 1)}</td>`).join("");
-  return `<section><h2>04-2 정치·재정 시나리오 비교 — PF32 vs Selic vs IPCA+</h2><div class=body>
+  const sc = id => `document.getElementById('${id}').scrollIntoView({behavior:'smooth',block:'start'})`, bi = best(r.evK);
+  return `<section id=s041><h2>04-1 정치·재정 시나리오 비교 — PF32 vs Selic vs IPCA+</h2><div class=body>
+    <div class="subnav noprint"><button onclick="${sc("s041")}">04-1 정치·재정</button><button onclick="${sc("s041usd")}">달러채 비교</button><button onclick="${sc("s041inc")}">이자 계산</button><button onclick="${sc("s042")}">04-2 환율 가정</button></div>
+    <div class="callout sum"><b>핵심</b> — 원화 기대수익(EV) ${names.map((n, j) => `${j === bi ? "<b>" : ""}${n} <span class=mono>${pct(r.evK[j], 1)}</span>${j === bi ? "</b> ✔" : ""}`).join(" · ")} · 시나리오별 최선 선택 시 <b class=mono>${pct(r.evBest, 1)}</b><br><small>룰라 승리 확률 ${f2(r.pLula, 0)}% / 우파 ${f2(100 - r.pLula, 0)}% · 결과 확인 후(10/25) 매수·12개월 보유 가정 · 가정은 아래 "가정 수정"에서 변경</small></div>
     <div class=note>결선 <b>10/25 · 플라비우 볼소나루(우파) vs 룰라(좌파)</b> · 예측시장의 우파 승리 확률은 약 77~78%(10/16 보도) · 정부 재정: 총부채 GDP 대비 80%대 초반, 2026 기초수지 적자 전망 — <b>확률과 금리·환율 반응은 아래에서 직접 입력</b>하세요 (입력값은 이 기기에만 저장).</div>
     <div class=note><b>결과 확인 후 매수</b> 기준: 10/25 결과가 나온 뒤(약 1주 내) 매수해 12개월 보유 후 매도. 충격(금리·환율)은 <b>이미 매수가에 반영</b>되고, 손익은 <b>진입 금리의 이자 + 진입 후 추가 변동</b>으로 계산합니다.</div>
+    <details class=fold ${polOpen ? "open" : ""} ontoggle="polOpen=this.open"><summary>가정 수정 — 확률·금리·환율·가산금리 (펼치기)</summary><div>
     <div class=tbl style="margin-top:8px"><table class=mono><thead><tr><th>가정</th><th class=r>확률%</th><th class=r>직후 금리 변동 bp<br><small>= 진입 금리</small></th><th class=r>진입 후 추가 금리 bp</th><th class=r>평균 Selic %</th><th class=r>실제 IPCA %</th><th class=r>직후 실질금리 bp</th><th class=r>진입 후 추가 실질 bp</th><th class=r>직후 BRL/KRW %</th><th class=r>진입 후 BRL/KRW %</th><th class=r>BRAZ 달러채 가산금리 변동 bp</th></tr></thead><tbody>
     ${P.sc.map((s, i) => `<tr><td style="white-space:normal;min-width:190px">${s.name}</td>${[["prob", 48], ["dy"], ["dy2"], ["sel"], ["ipca"], ["dr"], ["dr2"], ["fx"], ["fx2"], ["sp"]].map(([k, w]) => `<td class=r>${inp(`pol.sc.${i}.${k}`, s[k], w)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>
     <div class=note>확률 합 ${r.tw}%${r.tw !== 100 ? " → 정규화해 계산" : ""} · 룰라 승리 합계 ${f2(r.pLula, 0)}% · '직후' 값은 매수가에 이미 들어간 충격(매수 후 손익 아님), '진입 후' 값만 손익에 반영</div>
+    </div></details>
     <div class=tbl style="margin-top:8px"><table class=mono><thead><tr><th rowspan=2>시나리오</th><th class=r rowspan=2>PF32<br>진입 YTM</th><th class=r colspan=3>헤알(BRL) 기준 12개월 손익</th><th class=r colspan=3>원화(KRW) 기준 12개월 손익</th></tr><tr>${names.map(n => `<th class=r><small>${n}</small></th>`).join("")}${names.map(n => `<th class=r><small>${n}</small></th>`).join("")}</tr></thead><tbody>
     ${r.rows.map(x => `<tr><td style="white-space:normal">${x.name.split(" ")[0]} <small>${f2(x.w * 100, 0)}%</small></td><td class=r>${f2(x.yin, 2)}%</td>${cell(x.brlP, best(x.brlP))}${cell(x.krwP, best(x.krwP))}</tr>`).join("")}
     <tr style="border-top:2px solid var(--ink)"><td><b>기대값 EV</b></td><td></td>${cell(r.evB, best(r.evB))}${cell(r.evK, best(r.evK))}</tr>
@@ -327,8 +351,6 @@ function polSection(m) {
 }
 // 만기까지 연평균 IPCA 기대: BCB Focus 연도별 중앙값을 기간(연 단위) 가중 기하평균. 자료가 끝난 연도는 마지막 값 유지
 function inflBR(now = new Date(), byOverride) {
-  const man = INF().br_manual;
-  if (man > 0) return {v: man, src: "수동 입력"};
   const by = byOverride || (D.infl && D.infl.br && D.infl.br.by_year);
   if (!by) return {v: 4.0, src: "자료 없음 → 기본 4.0%"};
   const [d, mo, y] = C.tracked.venc.split("/").map(Number), end = new Date(y, mo - 1, d);
@@ -352,7 +374,7 @@ function inflAt(d) {
 // 환율 시나리오 x(BRL/KRW)에서의 총수익: 원화 기준, 달러 기준(USD/KRW 는 가정값 또는 현재 유지)
 function views(m, x) {
   const inf = INF(), usd = D.fx_usd && D.fx_usd.latest ? D.fx_usd.latest[1] : null;
-  const usdkrwNow = usd ? m.fx / usd : null, usdkrw = inf.usdkrw_assume > 0 ? inf.usdkrw_assume : usdkrwNow;
+  const usdkrwNow = usd ? m.fx / usd : null, usdkrw = usdkrwNow;
   const krw = total(m.ytm, m.fx, x);
   const usdT = usd ? ((1 + m.ytm / 100) * (x / m.fx) * (usdkrwNow / usdkrw) - 1) * 100 : null;
   return {krw, krwReal: real(krw, inf.kr), usd: usdT, usdReal: usdT == null ? null : real(usdT, inf.us), usdkrwNow, usdkrw};
@@ -378,7 +400,7 @@ function realPanel(m) {
     ${row("KRW 원 (환율 불변)", v.krw, inf.kr, "한국 물가 " + f2(inf.kr) + "% (" + inf.kr_src + ")")}
     ${v.usd == null ? "" : row("USD 달러 (환율 불변)", v.usd, inf.us, "미국 물가 " + f2(inf.us) + "% (" + inf.us_src + ")")}</tbody></table></div>
     <div class=note>실질 = (1+명목) ÷ (1+물가) − 1 · 명목 YTM ${f2(m.ytm)}%는 1년 기준 연율 · 전일 대비는 ${m.before ? brDate(m.before[0]) : "직전"} 대비(물가 기대는 동일 가정). <b>원화 기준 실질 0% 손익분기 BRL/KRW ≈ ${f2(be.krw)}</b> (현재 ${f2(m.fx)}, ${pct((be.krw / m.fx - 1) * 100, 1)})${be.usd ? ` · 달러 기준 ≈ ${f2(be.usd)}` : ""} — 이보다 환율이 내리면 물가를 뺀 구매력이 줄어듭니다.
-    ${v.usdkrwNow ? ` 달러 기준은 USD/KRW ${f2(v.usdkrw)}${INF().usdkrw_assume > 0 ? "(가정)" : "(현재 " + f2(v.usdkrwNow) + " 유지)"}로 계산.` : ""} 한국 물가는 한국은행 소비자동향조사 3년 후 기대인플레이션율(ECOS, <b>가계 설문 기반이라 시장 기대보다 오차가 큼</b> · 원화 실질수익에 모든 선택지 공통으로 반영돼 PF32·5:5·달러채 순위에는 영향 없음), 미국 물가는 미 국채 손익분기 인플레이션(명목−TIPS, 5·7년 평균, 시장 기대)이며 모두 자동 갱신됩니다${D.infl && D.infl.kr && D.infl.kr.cpi && D.infl.us && D.infl.us.cpi ? " (참고: 최근 CPI 전년동월비 한국 " + f2(D.infl.kr.cpi.v) + "% · 미국 " + f2(D.infl.us.cpi.v) + "%)" : ""}. 설정 탭에서 직접 입력하면 그 값을 씁니다.</div>`;
+    ${v.usdkrwNow ? ` 달러 기준은 USD/KRW ${f2(v.usdkrw)}(현재 ${f2(v.usdkrwNow)} 유지)로 계산.` : ""} 한국 물가는 한국은행 소비자동향조사 3년 후 기대인플레이션율(ECOS, <b>가계 설문 기반이라 시장 기대보다 오차가 큼</b> · 원화 실질수익에 모든 선택지 공통으로 반영돼 PF32·5:5·달러채 순위에는 영향 없음), 미국 물가는 미 국채 손익분기 인플레이션(명목−TIPS, 5·7년 평균, 시장 기대)이며 모두 자동 갱신됩니다${D.infl && D.infl.kr && D.infl.kr.cpi && D.infl.us && D.infl.us.cpi ? " (참고: 최근 CPI 전년동월비 한국 " + f2(D.infl.kr.cpi.v) + "% · 미국 " + f2(D.infl.us.cpi.v) + "%)" : ""}.</div>`;
 }
 
 // ---------- 공용 컴포넌트 ----------
@@ -468,11 +490,18 @@ V.overview = m => {
   if (m.useLive) { tr.push(m.price); nomS.push(m.ytm); rlS.push(real(m.ytm, inflAt(D.live_info.mtime.slice(0, 10)))); dts.push("LIVE"); fullD.push("LIVE " + brDate(D.live_info.mtime.slice(0, 10))); }
   const down = (() => { let n = 0; for (let i = tr.length - 1; i > 0 && tr[i] < tr[i - 1]; i--) n++; return n; })();
   return `<section><h2>01 최신변동 LATEST CHANGE</h2><div class=body>
+    ${(() => { const dy = m.before ? (m.ytm - m.before[1]) * 100 : null, dp = m.before ? m.price - m.before[2] : null, nx = m.next && m.next.price > 0, reached = nx && m.price <= m.next.price;
+      const chg = dy == null ? "—" : (dy >= 0 ? "▲ +" : "▼ ") + f2(dy, 0) + "bp";
+      return `<div class=hero><div><small>${C.tracked.label} 현재가 (BRL)</small><span class="big mono">${f2(m.price)}</span></div>
+        <div><small>만기수익률 YTM</small><span class="mid mono">${f2(m.ytm)}%</span></div>
+        <div><small>전일 대비</small><span class="mid mono">${chg}${dp == null ? "" : " · " + (dp >= 0 ? "+" : "") + f2(dp)}</span></div>
+        <div><small>실질 YTM</small><span class="mid mono">${pct(real(m.ytm, inflBR().v), 2)}</span></div>
+        <div><small>BRL/KRW</small><span class="mid mono">${f2(m.fx)}</span></div></div>
+      <div class="note" style="margin:4px 0 0">${m.source} · 환율 ${D.fx.latest ? brDate(D.fx.latest[0]) : ""} Frankfurter(ECB)</div>
+      ${nx ? `<div class="callout ${reached ? "go" : ""}" style="cursor:pointer" onclick="tab='stages';render()">${reached ? "🔔 <b>체결 조건 충족</b>" : "⏳ <b>대기</b>"} — ${m.next.name} 지정가 <b class=mono>${f2(m.next.price)}</b> · 현재 <b class=mono>${f2(m.price)}</b> · ${reached ? "지정가 이하 (02 분할매수에서 확인)" : f2(m.price - m.next.price) + " BRL 남음"}</div>` : ""}`; })()}
     <div class=grid>
-      <div class=card><small>${C.tracked.label} 현재가 (BRL)</small><b class=mono>${f2(m.price)}</b><div class=note>YTM ${f2(m.ytm)}% · ${m.source}</div></div>
-      <div class=card><small>BRL/KRW</small><b class=mono>${f2(m.fx)}</b><div class=note>${D.fx.latest ? brDate(D.fx.latest[0]) : ""} · Frankfurter(ECB)</div></div>
+      <div class=card><small>실질 YTM 상세</small><b class=mono>${pct(real(m.ytm, inflBR().v), 2)}</b><div class=note>${(() => { const c = dayChg(m, m.ytm, inflBR().v, m.before ? m.before[1] : null); return c ? `<span style="font-weight:700;font-size:14px">${c.txt}</span> 전일(${c.date}) 대비 · 직전 ${pct(real(m.before[1], inflBR().v), 2)}<br>` : ""; })()}명목 ${f2(m.ytm)}% ÷ IPCA 기대 ${f2(inflBR().v)}% · 원화·달러 기준은 03 환율</div></div>
       <div class=card><small>연속 하락 일수</small><b class=mono>${down}일</b><div class=note>가격 기준 (국채 CSV)</div></div>
-      <div class=card><small>실질 YTM (BRL, 인플레 제거)</small><b class=mono>${pct(real(m.ytm, inflBR().v), 2)}</b><div class=note>${(() => { const c = dayChg(m, m.ytm, inflBR().v, m.before ? m.before[1] : null); return c ? `<span style="font-weight:700;font-size:14px">${c.txt}</span> 전일(${c.date}) 대비 · 직전 ${pct(real(m.before[1], inflBR().v), 2)}<br>` : ""; })()}명목 ${f2(m.ytm)}% ÷ IPCA 기대 ${f2(inflBR().v)}% · 원화·달러 기준은 03 환율</div></div>
     </div>
     ${timesPanel(m)}
     <div class=tbl style="margin-top:10px"><table class=mono><thead><tr><th>종목</th><th class=r>직전</th><th class=r>최신</th><th class=r>변동</th></tr></thead><tbody>${rows}</tbody></table></div>
@@ -491,7 +520,8 @@ V.stages = m => {
   return `<section><h2>02 분할매수 ${C.stages.length}-STAGE — ${m.filledPct}% FILLED</h2><div class=body>
     <div class=bar>${bar}</div>
     ${!hasPx ? `<div class=warn>체결가·지정가가 비어 있습니다. <b>설정</b> 탭에서 입력하세요 (이 기기 브라우저에만 저장, 서버·GitHub로 전송되지 않음).</div>` : ""}
-    ${nx ? `<div class=warn class=mono>${reached ? "🔔 <b>체결 조건 충족</b>" : "대기"}: ${m.next.name} 지정가 ${f2(m.next.price)} · 현재 ${f2(m.price)} · ${reached ? "지정가 이하" : f2(gap) + " BRL 남음 (" + f2(gap / m.price * 100) + "%)"}</div>` : ""}
+    ${nx ? `<div class="callout ${reached ? "go" : ""} mono" style="font-size:15px">${reached ? "🔔 <b>체결 조건 충족</b>" : "⏳ <b>대기</b>"} — ${m.next.name} 지정가 <b>${f2(m.next.price)}</b> · 현재 <b>${f2(m.price)}</b> · ${reached ? "<b>지정가 이하</b>" : f2(gap) + " BRL 남음 (" + f2(gap / m.price * 100) + "%)"}</div>` : ""}
+    ${C.stop_fx > 0 && m.fx && m.fx <= C.stop_fx * 1.03 ? `<div class="callout bad">⚠ BRL/KRW <b class=mono>${f2(m.fx)}</b>가 STOP 환율 <b class=mono>${f2(C.stop_fx)}</b>에 ${m.fx <= C.stop_fx ? "이탈" : f2((m.fx / C.stop_fx - 1) * 100, 1) + "% 이내로 근접"} — 정리 검토</div>` : ""}
     <div class=grid style="margin-top:10px">
       <div class=card><small>현재 평균 (체결분)</small><b class=mono>${f2(m.avg)}</b><div class=note>체결 ${m.filledPct}% 가중평균 · ${m.avg ? "현재가 대비 " + pct((m.price / m.avg - 1) * 100) : "체결가 미입력"}</div></div>
       <div class=card><small>${m.next ? "다음 체결 시 최종 평균" : "최종 평균"}</small><b class=mono>${f2(m.avgAll)}</b><div class=note>모든 단계가 지정가에 체결된다고 가정 (${total_}%)</div></div>
@@ -505,13 +535,17 @@ V.stages = m => {
 V.fx = m => {
   const s = D.fx.series.map(r => r[1]), lo = C.fx_range.low, hi = C.fx_range.high;
   const pos = Math.max(0, Math.min(100, (m.fx - lo) / (hi - lo) * 100));
-  const rows = [...new Set([...C.extra_fx_rows, +m.fx.toFixed(2)])].sort((a, b) => a - b).map(x => {
-    const chg = (x / m.fx - 1) * 100, tot = total(m.ytm, m.fx, x), cur = Math.abs(x - m.fx) < 0.01, v = views(m, x);
-    return `<tr ${cur ? 'style="font-weight:700"' : ""}><td class=r>${f2(x)}</td><td class=r>${pct(chg, 1)}</td><td class=r>${f2(m.ytm)}%</td><td class=r>${pct(tot, 1)}</td><td class=r>${pct(v.krwReal, 1)}</td><td class=r>${v.usd == null ? "—" : pct(v.usd, 1)}</td><td class=r>${v.usdReal == null ? "—" : pct(v.usdReal, 1)}</td><td>${cur ? "현재 (베이스)" : ""}</td></tr>`;
+  const be = breakeven(m), marks = new Map([[+m.fx.toFixed(2), "현재 (베이스)"]]);
+  marks.set(+be.krw.toFixed(2), "원화 실질 0% 손익분기");
+  if (C.stop_fx > 0) { const k = +(+C.stop_fx).toFixed(2); marks.set(k, (marks.get(k) ? marks.get(k) + " · " : "") + "⛔ STOP 환율"); }
+  const rows = [...new Set([...C.extra_fx_rows, ...marks.keys()])].sort((a, b) => a - b).map(x => {
+    const chg = (x / m.fx - 1) * 100, tot = total(m.ytm, m.fx, x), cur = Math.abs(x - m.fx) < 0.01, v = views(m, x), mk = marks.get(+x.toFixed(2)) || "";
+    return `<tr class="${/STOP/.test(mk) ? "hl-bad" : mk && !cur ? "hl" : ""}" ${cur ? 'style="font-weight:700"' : ""}><td class=r>${f2(x)}</td><td class=r>${pct(chg, 1)}</td><td class=r>${f2(m.ytm)}%</td><td class=r>${pct(tot, 1)}</td><td class=r>${pct(v.krwReal, 1)}</td><td class=r>${v.usd == null ? "—" : pct(v.usd, 1)}</td><td class=r>${v.usdReal == null ? "—" : pct(v.usdReal, 1)}</td><td>${mk}</td></tr>`;
   }).join("");
   return `<section><h2>03 환율 BRL/KRW — ${lo}–${hi} RANGE</h2><div class=body>
     <div class=mono>현재 <b>${f2(m.fx)}</b> (${D.fx.latest ? brDate(D.fx.latest[0]) : ""}) · 10년 최저 ${f2(Math.min(...s))} / 최고 ${f2(Math.max(...s))}</div>
     <div class=rng><i style="left:${pos}%"></i><em style="left:0">${lo}</em><em style="left:100%">${hi}</em><em style="left:${pos}%;top:-20px">▼ ${f2(m.fx)}</em></div>
+    <div class="callout ${C.stop_fx > 0 && m.fx <= C.stop_fx * 1.03 ? "bad" : "sum"}">${C.stop_fx > 0 && m.fx <= C.stop_fx * 1.03 ? "<b class=neg>⚠ STOP 환율 근접</b><br>" : ""}<b>핵심</b> — 원화 실질 손익분기 환율 <b class=mono style="font-size:18px">${f2(be.krw)}</b> <span class=mono>(현재 대비 ${pct((be.krw / m.fx - 1) * 100, 1)})</span>${C.stop_fx > 0 ? ` · STOP 환율 <b class=mono>${f2(C.stop_fx)}</b> <span class=mono>(현재 대비 ${pct((C.stop_fx / m.fx - 1) * 100, 1)})</span>` : ""}<br><small>1년 보유 기준: 헤알이 손익분기보다 약해지면 물가를 뺀 원화 구매력이 줄어듭니다.</small></div>
     <div style="margin-top:14px"><b>실질수익률 (인플레 제거)</b>${realPanel(m)}</div>
     <div style="margin-top:22px">${spark(s.slice(-260), 560, 90)}<div class=note>최근 데이터 추이 (ECB 기준, 주말·휴일 제외)</div></div>
     <div class=tbl><table class=mono><thead><tr><th class=r>BRL/KRW</th><th class=r>FX</th><th class=r>YTM</th><th class=r>총수익(원)</th><th class=r>실질(원)</th><th class=r>총수익($)</th><th class=r>실질($)</th><th>비고</th></tr></thead><tbody>${rows}</tbody></table></div>
@@ -519,26 +553,8 @@ V.fx = m => {
   </div></section>`;
 };
 
-function scen(m) {
-  const usd = D.fx_usd && D.fx_usd.latest ? D.fx_usd.latest[1] : null, now = usd ? m.fx / usd : null, as = INF().usdkrw_assume;
-  const g = as > 0 && now ? (as / now - 1) * 100 : 0, b0 = +C.braz2034_ytm > 0 ? +C.braz2034_ytm : 0;
-  const b = ((1 + b0 / 100) * (1 + g / 100) - 1) * 100;   // 달러채 원화 수익(USD/KRW 가정 없으면 = YTM)
-  const rows = C.scenarios.map(s => {
-    const t = total(m.ytm, m.fx, s.fx), p55 = (t + b) / 2;
-    return {...s, fxchg: (s.fx / m.fx - 1) * 100, t, p55};
-  });
-  const w = rows.reduce((a, r) => a + r.prob, 0);
-  return {rows, ev: rows.reduce((a, r) => a + r.prob * r.t, 0) / w, ev55: rows.reduce((a, r) => a + r.prob * r.p55, 0) / w, base55: (m.ytm + b) / 2, b, g, w, braz: b0};
-}
-V.scen = m => {
-  const s = scen(m);
-  return `<section><h2>04 대선시나리오 ELECTION 2026 — BASE YTM ${f2(m.ytm)}%</h2><div class="body tbl"><table class=mono>
-    <thead><tr><th>시나리오</th><th class=r>확률</th><th class=r>BRL/KRW</th><th class=r>FX 변동</th><th class=r>PF32 총수익</th><th class=r>실질(원)</th><th class=r>5:5 수익</th></tr></thead><tbody>
-    ${s.rows.map(r => `<tr><td>${r.name}</td><td class=r>${r.prob}%</td><td class=r>${f2(r.fx)}</td><td class=r>${pct(r.fxchg, 1)}</td><td class=r>${pct(r.t, 1)}</td><td class=r>${pct(real(r.t, INF().kr), 1)}</td><td class=r>${pct(r.p55, 2)}</td></tr>`).join("")}
-    <tr style="font-weight:700"><td>EV 기대수익</td><td class=r>${s.w}%</td><td></td><td></td><td class=r>${pct(s.ev, 1)}</td><td class=r>${pct(real(s.ev, INF().kr), 1)}</td><td class=r>${pct(s.ev55, 1)}</td></tr></tbody></table>
-    <div class=note>확률 합이 ${s.w}% 입니다${s.w !== 100 ? " — 가중평균으로 정규화했습니다." : "."} 확률·환율 가정은 설정 탭에서 바꿀 수 있습니다.</div></div></section>${polSection(m)}${realCmpSection(m)}`;
-};
-// ---------- 04-3 헤알채(PF32) vs 달러채 원화 실질 만기수익률 ----------
+V.scen = m => polSection(m) + realCmpSection(m);
+// ---------- 04-2 헤알채(PF32) vs 달러채 원화 실질 만기수익률 ----------
 // 기본값: 최근 5년(update.py fx_stats) 원화 기준 BRL/KRW·USD/KRW — cagr=연평균 변화율, up/down=롤링 1년 변화율의 강세·약세 구간 평균 (없으면 2026-10 기준 값)
 const FXS_DEF = {brl: {cagr: 3.99, up: 11.39, down: -6.42}, usd: {cagr: 2.42, up: 6.98, down: -2.48}, yrs: 5};
 const FXT_DEF = [{"c": "브라질", "who": "테메르(중도우파)", "from": "2016-10-20", "to": "2018-12-31", "brl": {"chg": -20.3, "cagr": -9.8}, "usd": {"chg": -1.9, "cagr": -0.9}}, {"c": "브라질", "who": "보우소나루(우파)", "from": "2019-01-01", "to": "2022-12-30", "brl": {"chg": -18.1, "cagr": -4.9}, "usd": {"chg": 12.3, "cagr": 3.0}}, {"c": "브라질", "who": "룰라(좌파)", "from": "2023-01-02", "to": "2026-10-16", "brl": {"chg": 10.1, "cagr": 2.6}, "usd": {"chg": 4.8, "cagr": 1.2}}, {"c": "미국", "who": "트럼프 1기(공화)", "from": "2017-01-20", "to": "2021-01-20", "brl": {"chg": -43.7, "cagr": -13.4}, "usd": {"chg": -6.3, "cagr": -1.6}}, {"c": "미국", "who": "바이든(민주)", "from": "2021-01-20", "to": "2025-01-20", "brl": {"chg": 15.3, "cagr": 3.6}, "usd": {"chg": 31.7, "cagr": 7.1}}, {"c": "미국", "who": "트럼프 2기(공화)", "from": "2025-01-20", "to": "2026-10-16", "brl": {"chg": 9.7, "cagr": 5.5}, "usd": {"chg": -8.2, "cagr": -4.8}}];   // 집권 기간별 환율(update.py fx_terms), 데이터에 없을 때 2026-10 기준 값
@@ -616,8 +632,8 @@ function realCmpSection(m) {
     return rs.map((o, k) => `<tr${k === 0 ? ' style="border-top:2px solid var(--ink)"' : ""}>${k === 0 ? `<td rowspan=5 style="white-space:normal;min-width:170px;vertical-align:top"><b>${c[0]}</b><br><small>헤알 연 ${inp(ci, 1, c[1])}% · 달러 연 ${inp(ci, 2, c[2])}%</small>${roll ? `<br><span style="display:inline-block;margin-top:4px;font-weight:700">과거 발생빈도 ${f2(cnt[ci] / roll.length * 100, 0)}%</span><br><small style="font-weight:400">${regTxt(ci)}</small>` : ""}</td>` : ""}<td style="white-space:normal">${o.x.name.split(" ")[0]} <small>${f2(o.x.w * 100, 0)}%</small></td><td class=r>${f2(o.x.yin, 2)}%</td><td class=r>${f2(b.ytm + o.x.sp / 100, 2)}%</td>${cellS(o.v, k)}</tr>`).join("")
       + `<tr style="font-weight:700"><td>EV</td><td></td><td></td>${cell([ev(0), ev(1), ev(2)], bi([ev(0), ev(1), ev(2)]))}</tr>`;
   }).join("");
-  return `<section><h2>04-3 헤알채(PF32) vs 달러표시 채권 — 원화 실질 만기수익률 비교</h2><div class=body>
-    <div class=note>확인 뒤 매수한 진입 YTM로 만기까지 보유할 때의 <b>연율 원화 실질 수익률</b>(한국 물가 ${f2(kr, 1)}% 차감). 달러채는 <b>${b.n}</b> 기준(04-2에서 종목 선택). 환율은 <b>진입 후 연 변동</b>이며 헤알=BRL/KRW, 달러=USD/KRW. 진입 전 환율 충격은 매수가에 이미 반영된 것으로 봅니다. 환율은 원화 기준 가격이라 <b>양수 = 해당 통화 강세(원화 약세), 음수 = 해당 통화 약세(원화 강세)</b>입니다. 달러채 투자자에게 불리한 쪽은 달러 연 변동이 음수일 때(원화 강세)입니다. 기본값은 최근 ${(D.fx_stats || FXS_DEF).yrs}년 원화 기준 실제 환율에서 계산했습니다(연평균 = 5년 전 대비 연 환산 변화율, 강세·약세 구간 평균 = 5년간 롤링 1년 변화율 중 오른 구간·내린 구간의 평균). 입력칸에서 수정할 수 있습니다. <button class=noprint onclick="delete C.rc3;try{localStorage.setItem('pf32cfg',JSON.stringify(C))}catch(e){};if(LOCAL)fetch('/api/config',{method:'POST',body:JSON.stringify(C)}).catch(()=>{});render(true)">기본값으로</button></div>
+  return `<section id=s042><h2>04-2 헤알채(PF32) vs 달러표시 채권 — 원화 실질 만기수익률 비교</h2><div class=body>
+    <div class=note>확인 뒤 매수한 진입 YTM로 만기까지 보유할 때의 <b>연율 원화 실질 수익률</b>(한국 물가 ${f2(kr, 1)}% 차감). 달러채는 <b>${b.n}</b> 기준(04-1에서 종목 선택). 환율은 <b>진입 후 연 변동</b>이며 헤알=BRL/KRW, 달러=USD/KRW. 진입 전 환율 충격은 매수가에 이미 반영된 것으로 봅니다. 환율은 원화 기준 가격이라 <b>양수 = 해당 통화 강세(원화 약세), 음수 = 해당 통화 약세(원화 강세)</b>입니다. 달러채 투자자에게 불리한 쪽은 달러 연 변동이 음수일 때(원화 강세)입니다. 기본값은 최근 ${(D.fx_stats || FXS_DEF).yrs}년 원화 기준 실제 환율에서 계산했습니다(연평균 = 5년 전 대비 연 환산 변화율, 강세·약세 구간 평균 = 5년간 롤링 1년 변화율 중 오른 구간·내린 구간의 평균). 입력칸에서 수정할 수 있습니다. <button class=noprint onclick="delete C.rc3;try{localStorage.setItem('pf32cfg',JSON.stringify(C))}catch(e){};if(LOCAL)fetch('/api/config',{method:'POST',body:JSON.stringify(C)}).catch(()=>{});render(true)">기본값으로</button></div>
     <div class=tbl><table class=mono><thead><tr><th>환율 가정</th><th>시나리오</th><th class=r>PF32<br>진입 YTM</th><th class=r>달러채<br>진입 YTM</th><th class=r>PF32 100%<br><small>실질(원)</small></th><th class=r>5:5<br><small>실질(원)</small></th><th class=r>달러채 100%<br><small>실질(원)</small></th></tr></thead><tbody>${body}</tbody></table></div>
     <div class=note><span style="background:${GR}.6);padding:1px 6px;font-weight:700">전체 최선 ${pct(gMax, 1)}</span> <span style="background:${RD}.6);padding:1px 6px;font-weight:700">전체 최악 ${pct(gMin, 1)}</span> <span style="background:${GR}.22);padding:1px 6px">시나리오별 최선</span> <span style="background:${RD}.22);padding:1px 6px">시나리오별 최악</span> — 투자자 수익률 기준(환율 가정 5개 × 구성 3개 중 비교, EV 행 제외)</div>
     ${(() => { const T = (D.fx_stats && D.fx_stats.terms) || FXT_DEF, c = v => `<td class=r>${pct(v.chg, 1)}</td><td class=r>${pct(v.cagr, 1)}</td>`;
@@ -627,74 +643,74 @@ function realCmpSection(m) {
       <div class=note>양수 = 해당 통화 강세(원화 약세). 진영과 환율의 <b>인과관계가 아닙니다</b> — 표본이 정권 3~4개뿐이고 같은 기간에 코로나, 달러 사이클, 원자재 가격, 원화 자체의 움직임이 크게 작용했습니다. 브라질 집권 기간 미국 정권이 겹치므로 두 표를 따로 해석하세요. 룰라 3기는 2023-01 취임 이후, 트럼프 2기는 2025-01 취임 이후 현재까지입니다.</div>`; })()}
     ${roll ? `<div class=note><b>발생빈도</b> = 과거 약 ${f2(roll.length / 52, 0)}년간(데이터 시작 2016-10 이후) 매주 기준 '직전 1년간 헤알·달러 변화율'을 위 5개 가정 중 <b>가장 가까운 것</b>에 배정한 비율입니다(합 100%, 가정값을 고치면 다시 계산). 4분면 기준으로는 헤알·달러 동반 약세(원화 강세) ${f2(quad[0], 0)}% · 헤알 약세·달러 강세 ${f2(quad[1], 0)}% · 헤알 강세·달러 약세 ${f2(quad[2], 0)}% · 동반 강세(원화 약세) ${f2(quad[3], 0)}%였습니다. 정권 표시는 그 가정에 해당한 1년 구간이 <b>끝난 날</b>의 집권 정권 비율입니다. 겹치는 1년 구간이라 독립 표본이 아니며 미래 확률이 아닙니다.</div>` : `<div class=note>발생빈도는 데이터 갱신(fx_stats.roll) 후 표시됩니다.</div>`}
     ${epHtml}
-    <div class=note>굵은 글씨 = 해당 행에서 가장 높은 구성. 5:5 = (PF32 원화 연수익 + 달러채 원화 연수익) ÷ 2 (재조정·이자 재투자 단순화) · 달러 수익 = 진입 YTM($)(미 국채금리 변동 없음 가정) · 가산금리 변동 가정은 04-2 입력표 · 예금 대비 비교: 예금 4.3%의 실질은 약 ${f2(real(4.3, kr), 1)}% · 세금·수수료·환전비용 미반영, 투자 권유 아님.</div>
+    <div class=note>굵은 글씨 = 해당 행에서 가장 높은 구성. 5:5 = (PF32 원화 연수익 + 달러채 원화 연수익) ÷ 2 (재조정·이자 재투자 단순화) · 달러 수익 = 진입 YTM($)(미 국채금리 변동 없음 가정) · 가산금리 변동 가정은 04-1 입력표 · 예금 대비 비교: 예금 4.3%(가정)의 실질은 약 ${f2(real(4.3, kr), 1)}% · 세금·수수료·환전비용 미반영, 투자 권유 아님.</div>
   </div></section>`;
 }
 V.port = m => {
-  const r = polCalc(m), u = usdRows(r, m), kr = INF().kr, sc = scen(m), I = USD_INC(), b = sc.braz;
+  const r = polCalc(m), u = usdRows(r, m), kr = INF().kr, I = USD_INC();
   const ev = f => u.rows.reduce((a, o) => a + o.x.w * f(o), 0);
-  const comp = [["헤알채 PF32 100%", o => o.pf], ["5:5 (PF32 + 달러채)", o => o.mix], ["달러채 100%", o => o.k]];
+  const comp = [["헤알채 PF32 100%", o => o.pf], ["5:5 (PF32 + 달러채)", o => o.mix], ["달러채 100%", o => o.k]], nm = ["헤알채", "5:5", "달러채"];
   const evs = comp.map(([, f]) => ev(f)), mn = comp.map(([, f]) => Math.min(...u.rows.map(f))), mx = comp.map(([, f]) => Math.max(...u.rows.map(f)));
   const top = arr => arr.indexOf(Math.max(...arr)), low = arr => arr.indexOf(Math.min(...arr));
-  const fw = sc.rows.reduce((a, o) => o.t < a.t ? o : a, sc.rows[0]), fwv = [fw.t, fw.p55, sc.b];   // 헤알 약세 최악 환율 시나리오
   const won = v => (I.amt * v / 100 >= 0 ? "+" : "") + f2(I.amt * v / 100, 0) + "만";
-  const cards = comp.map(([n], i) => `<div class=card><small>${n}</small><b class=mono>${pct(evs[i], 1)}</b><div class=note>EV 12개월(원화) · 실질 ${pct(real(evs[i], kr), 1)}<br>최악 ${pct(mn[i], 1)} · 최선 ${pct(mx[i], 1)}<br><b>헤알 약세(${fw.name.split(" ")[0]}, ${f2(fw.fx)}): ${pct(fwv[i], 1)}</b><br>${f2(I.amt, 0)}만원 기준 EV ${won(evs[i])}</div></div>`).join("");
+  const hl = (arr, j) => j === top(arr) ? ' style="font-weight:700;background:rgba(34,160,70,.2)"' : "";
+  // 환율 가정(04-2와 같은 가정·공식) × 세 구성: 만기 보유 연율 원화 실질 수익률의 S1~S4 확률가중
+  const ann = (y, g) => ((1 + y / 100) * (1 + g / 100) - 1) * 100, cases = C.rc3 && C.rc3.length ? C.rc3 : rcDef();
+  const fxRows = cases.map(c => { const e = [0, 0, 0]; r.rows.forEach(x => { const kP = ann(x.yin, c[1]), kU = ann(u.b.ytm + x.sp / 100, c[2]); [real(kP, kr), real((kP + kU) / 2, kr), real(kU, kr)].forEach((q, j) => e[j] += x.w * q); }); return {c, e}; });
+  const fw = fxRows.reduce((a, o) => o.e[0] < a.e[0] ? o : a, fxRows[0]);   // 헤알 약세가 가장 큰 환율 가정(PF32 가장 불리)
+  const bestEv = top(evs), bestFw = top(fw.e);
+  const cards = comp.map(([n], i) => `<div class=card style="${i === bestEv ? "border-width:3px;" : ""}"><small>${n}${i === bestEv ? " · EV 최선 ✔" : ""}</small><b class=mono style="font-size:26px">${pct(evs[i], 1)}</b><div class=note style="opacity:.85">EV 12개월(원화) · 실질 ${pct(real(evs[i], kr), 1)}<br>최악 ${pct(mn[i], 1)} · 최선 ${pct(mx[i], 1)}<br>${f2(I.amt, 0)}만원 기준 EV ${won(evs[i])}</div>
+    <div class=note style="margin-top:6px;padding-top:4px;border-top:1px solid var(--line);opacity:1;${i === bestFw ? "color:var(--ok);font-weight:700" : ""}">${fw.c[0].split("(")[0]} 시 연 실질 <span class=mono>${pct(fw.e[i], 1)}</span>${i === bestFw ? " ✔ 최선" : ""}</div></div>`).join("");
   const rowsHtml = u.rows.map(o => { const v = comp.map(([, f]) => f(o)), bi = top(v);
-    return `<tr><td style="white-space:normal">${o.x.name.split(" ")[0]} <small>${f2(o.x.w * 100, 0)}%</small></td>${v.map((x, j) => `<td class=r${j === bi ? ' style="font-weight:700;background:rgba(34,160,70,.2)"' : ""}>${pct(x, 1)}</td>`).join("")}<td>${comp[bi][0].split(" ")[0]}</td></tr>`; }).join("");
-  const bi = top(evs), wi = low(mn);
-  const verdict = `<b>두 관점을 함께 보세요.</b> ① S1~S4(진입 후 환율 불변): EV 최선 <b>${comp[bi][0]}</b>(${pct(evs[bi], 1)}), 5:5는 PF32 대비 EV ${pct(evs[1] - evs[0], 1)}p를 포기합니다. ② 헤알 약세(${fw.name.split(" ")[0]}, BRL/KRW ${f2(fw.fx)}): PF32 ${pct(fwv[0], 1)} → 5:5 ${pct(fwv[1], 1)}로 하방을 ${pct(fwv[1] - fwv[0], 1)}p 방어, 달러채 100%는 ${pct(fwv[2], 1)}. 5:5는 헤알 약세 보험료로 위 EV 차이를 지불하는 구조입니다. (S1~S4는 환율을 고정하므로 PF32의 환위험이 드러나지 않습니다.)`;
-  return `<section><h2>05 헤알채 · 달러채 · 5:5 비교 요약 — 04 분석 종합</h2><div class=body>
-    <div class=note style="margin:0 0 8px">04-2의 S1~S4(확인 후 매수, 진입 후 환율 불변 가정, 선택 종목 <b>${u.b.n}</b>, USD/KRW ${u.g ? pct(u.g, 1) + " 가정" : "변동 없음"})를 그대로 모아 세 구성을 나란히 봅니다. 종목 선택·가정 수정은 04-2, 투자금은 04-2 이자 계산 입력.</div>
+    return `<tr><td style="white-space:normal">${o.x.name.split(" ")[0]} <small>${f2(o.x.w * 100, 0)}%</small></td>${v.map((x, j) => `<td class=r${hl(v, j)}>${pct(x, 1)}</td>`).join("")}<td>${nm[bi]}</td></tr>`; }).join("");
+  const bi = top(evs);
+  const verdict = `<b>두 관점을 함께 보세요.</b> ① 정치·재정 시나리오(진입 후 환율 불변): EV 최선 <b>${nm[bi]}</b>(${pct(evs[bi], 1)}), 5:5는 PF32 대비 EV ${pct(evs[1] - evs[0], 1)}p를 포기합니다. ② 환율 가정 <b>${fw.c[0].split("(")[0]}</b>(헤알 연 ${pct(fw.c[1], 1)}): 연 실질 PF32 ${pct(fw.e[0], 1)} → 5:5 ${pct(fw.e[1], 1)}로 ${pct(fw.e[1] - fw.e[0], 1)}p 방어, 달러채 100%는 ${pct(fw.e[2], 1)}. 5:5는 헤알 약세 보험료로 EV 차이를 지불하는 구조입니다(① 표는 환율을 고정해 PF32의 환위험이 드러나지 않습니다).`;
+  return `<section><h2>05 헤알채 · 달러채 · 5:5 비교</h2><div class=body>
+    <div class=note style="margin:0 0 8px">04-1·04-2의 가정과 계산을 그대로 모아 세 구성을 나란히 봅니다. 선택 종목 <b>${u.b.n}</b>(시세 ${USD_ASOF} 수동 입력)${usdStale()} · USD/KRW 변동 없음 가정. 종목 선택·가정 수정은 04 탭, 투자금은 04-1 이자 계산 입력.</div>
+    <div class="callout sum">${verdict}</div>
     <div class=grid>${cards}</div>
-    <p class=note style="margin:8px 0">${verdict}</p>
-    <div class=tbl><table class=mono><thead><tr><th>시나리오 (확인 후 매수)</th>${comp.map(([n]) => `<th class=r>${n.replace(" (PF32 + 달러채)", "")}<br><small>원화 12개월</small></th>`).join("")}<th>시나리오 최선</th></tr></thead><tbody>${rowsHtml}
-    <tr style="border-top:2px solid var(--ink);font-weight:700"><td>기대값 EV</td>${evs.map(v => `<td class=r>${pct(v, 1)}</td>`).join("")}<td>${comp[bi][0].split(" ")[0]}</td></tr>
+    <h3 style="margin:10px 0 4px;font-size:14px">① 정치·재정 시나리오별 (04-1, 확인 후 매수 · 12개월 원화 수익)</h3>
+    <div class=tbl><table class=mono><thead><tr><th>시나리오</th>${comp.map(([n]) => `<th class=r>${n.replace(" (PF32 + 달러채)", "")}</th>`).join("")}<th>시나리오 최선</th></tr></thead><tbody>${rowsHtml}
+    <tr style="border-top:2px solid var(--ink);font-weight:700"><td>기대값 EV</td>${evs.map((v, j) => `<td class=r${hl(evs, j)}>${pct(v, 1)}</td>`).join("")}<td>${nm[bi]}</td></tr>
     <tr><td>EV 실질(원)</td>${evs.map(v => `<td class=r>${pct(real(v, kr), 1)}</td>`).join("")}<td></td></tr>
     <tr><td>최악 / 최선 폭</td>${comp.map((_, i) => `<td class=r>${pct(mn[i], 1)} / ${pct(mx[i], 1)}</td>`).join("")}<td></td></tr>
     <tr><td>투자금 ${f2(I.amt, 0)}만원 EV 손익</td>${evs.map(v => `<td class=r>${won(v)}</td>`).join("")}<td></td></tr></tbody></table></div>
-    <div class=note>5:5 = (PF32 원화 수익 + 달러채 원화 수익) ÷ 2 (재조정·이자 재투자 단순화). 달러채는 이자를 주고 PF32는 만기 일시 수령이므로 현금흐름은 04-2 이자 계산 참고. 04-2와 같은 표이므로 값이 일치해야 하며, 가산금리 변동·환율은 <b>가정</b>입니다. 세금·수수료·환전비용 미반영, 투자 권유 아님.</div>
-    <h3 style="margin:14px 0 4px;font-size:14px">환율 시나리오 기준 (04-1 표와 동일 · BRAZ 2034 수동 YTM ${b > 0 ? f2(b, 2) + "%" : "<b style=\"color:#c0392b\">⚠ 미입력(0%로 계산) — 설정 탭에서 입력</b>"})</h3>
-    <div class=tbl><table class=mono><thead><tr><th>시나리오</th><th class=r>BRL/KRW</th><th class=r>PF32 총수익</th><th class=r>달러채<br><small>${f2(b, 2)}% ${sc.g ? "·USD/KRW " + pct(sc.g, 1) : ""}</small></th><th class=r>5:5</th><th class=r>5:5 실질(원)</th></tr></thead><tbody>
-    ${sc.rows.map(o => `<tr><td>${o.name}<small> ${o.prob}%</small></td><td class=r>${f2(o.fx)}</td><td class=r>${pct(o.t, 1)}</td><td class=r>${pct(sc.b, 1)}</td><td class=r><b>${pct(o.p55, 1)}</b></td><td class=r>${pct(real(o.p55, kr), 1)}</td></tr>`).join("")}
-    <tr style="border-top:2px solid var(--ink);font-weight:700"><td>EV</td><td></td><td class=r>${pct(sc.ev, 1)}</td><td class=r>${pct(sc.b, 1)}</td><td class=r>${pct(sc.ev55, 1)}</td><td class=r>${pct(real(sc.ev55, kr), 1)}</td></tr></tbody></table></div>
-    <div class=note>이 표의 달러채 수익은 진입 후 12개월 동안 만기수익률이 그대로 유지된다는 단순 가정입니다(가산금리 변동 미반영). 위 S1~S4 표는 가산금리 변동을 반영하므로 두 표의 달러채·5:5 값은 기준이 달라 다를 수 있습니다.</div>
+    <h3 style="margin:14px 0 4px;font-size:14px">② 환율 가정별 (04-2, 만기 보유 · 연율 원화 실질, S1~S4 확률가중)</h3>
+    <div class=tbl><table class=mono><thead><tr><th>환율 가정</th><th class=r>헤알 / 달러<br><small>진입 후 연 변동</small></th>${comp.map(([n]) => `<th class=r>${n.replace(" (PF32 + 달러채)", "")}</th>`).join("")}<th>최선</th></tr></thead><tbody>
+    ${fxRows.map(o => `<tr><td style="white-space:normal">${o.c[0].split("(")[0]}</td><td class=r>${pct(o.c[1], 1)} / ${pct(o.c[2], 1)}</td>${o.e.map((x, j) => `<td class=r${hl(o.e, j)}>${pct(x, 1)}</td>`).join("")}<td>${nm[top(o.e)]}</td></tr>`).join("")}</tbody></table></div>
+    <div class=note>5:5 = (PF32 원화 수익 + 달러채 원화 수익) ÷ 2 (재조정·이자 재투자 단순화). 달러채는 이자를 주고 PF32는 만기 일시 수령이므로 현금흐름은 04-1 이자 계산 참고. 04-1·04-2와 같은 가정이므로 값이 일치해야 하며, 가산금리 변동·환율은 <b>가정</b>입니다. 세금·수수료·환전비용 미반영, 투자 권유 아님.</div>
   </div></section>`;
 };
 
 let bondQ = "";
 V.bonds = m => {
   const hasLive = D.live && D.live.length;
-  const rows = hasLive ? D.live.map(b => ({n: b.name, y: b.yield_text, p: b.pu, v: b.venc, mi: b.min_invest}))
-    : D.bonds.map(b => ({n: b.tipo + " " + b.venc.slice(-4), y: f2(b.taxa_compra) + "%", p: b.pu_compra, v: b.venc, mi: null}));
+  const trk = [C.tracked, ...C.peers].map(c => `${c.tipo}|${c.venc}`), mainKey = `${C.tracked.tipo}|${C.tracked.venc}`;
+  const rows0 = hasLive ? D.live.map(b => ({n: b.name, y: b.yield_text, p: b.pu, v: b.venc, mi: b.min_invest, k: b.key}))
+    : D.bonds.map(b => ({n: b.tipo + " " + b.venc.slice(-4), y: f2(b.taxa_compra) + "%", p: b.pu_compra, v: b.venc, mi: null, k: `${b.tipo}|${b.venc}`}));
+  const rows = [...rows0.filter(r => trk.includes(r.k)).sort((a, b) => trk.indexOf(a.k) - trk.indexOf(b.k)), ...rows0.filter(r => !trk.includes(r.k))];   // 추적 종목 맨 위
   const q = bondQ.toLowerCase();
   const fil = rows.filter(r => !q || (r.n + r.y + r.v).toLowerCase().includes(q));
   return `<section><h2>06 국채 전체 — ${hasLive ? "Investir CSV " + D.live_info.mtime.replace("T", " ") : "Tesouro Transparente 최신"}</h2><div class=body>
     <input id=q placeholder="검색 (예: Prefixado, IPCA, 2032)" value="${bondQ}" oninput="bondQ=this.value;render(true)">
     <div class=tbl style="margin-top:8px"><table class=mono><thead><tr><th>종목</th><th>수익률</th><th class=r>단가 PU</th><th class=r>최소투자</th><th>만기</th></tr></thead><tbody>
-    ${fil.map(r => `<tr><td>${r.n}</td><td>${r.y}</td><td class=r>${f2(r.p)}</td><td class=r>${r.mi != null ? f2(r.mi) : "—"}</td><td>${r.v}</td></tr>`).join("")}</tbody></table></div></div></section>`;
+    ${fil.map(r => { const t = trk.includes(r.k); return `<tr class="${t ? "hl" : ""}" ${t ? 'style="font-weight:700"' : ""}><td>${r.k === mainKey ? '<span class="tag inv">PF32</span> ' : t ? '<span class=tag>추적</span> ' : ""}${r.n}</td><td>${r.y}</td><td class=r>${f2(r.p)}</td><td class=r>${r.mi != null ? f2(r.mi) : "—"}</td><td>${r.v}</td></tr>`; }).join("")}</tbody></table></div></div></section>`;
 };
 
 V.settings = m => {
   const st = C.stages.map((s, i) => `<tr><td>${s.name}</td><td><input type=number step=any data-k="stages.${i}.pct" value="${s.pct}"></td><td><input type=number step=any data-k="stages.${i}.price" value="${s.price}"></td><td><input data-k="stages.${i}.date" value="${s.date || ""}"></td><td><input type=checkbox data-k="stages.${i}.filled" ${s.filled ? "checked" : ""}></td></tr>`).join("");
-  const sc = C.scenarios.map((s, i) => `<tr><td><input data-k="scenarios.${i}.name" value="${s.name}"></td><td><input type=number data-k="scenarios.${i}.prob" value="${s.prob}"></td><td><input type=number step=any data-k="scenarios.${i}.fx" value="${s.fx}"></td></tr>`).join("");
-  return `<section><h2>설정 (이 기기 브라우저에 저장)</h2><div class=body>
+  return `<section><h2>설정 — 분할매수·STOP·TARGET (이 기기 브라우저에 저장)</h2><div class=body>
     <div class=tbl><table><thead><tr><th>단계</th><th>비중%</th><th>지정가/체결가</th><th>날짜</th><th>체결</th></tr></thead><tbody>${st}</tbody></table></div>
     <div class=kv style="margin:10px 0"><label>STOP 가격</label><input type=number step=any data-k="stop_price" value="${C.stop_price}">
       <label>STOP 환율</label><input type=number step=any data-k="stop_fx" value="${C.stop_fx}">
-      <label>익절 TARGET</label><input type=number step=any data-k="target_price" value="${C.target_price}">
-      <label>BRAZ 2034 YTM %</label><input type=number step=any data-k="braz2034_ytm" value="${C.braz2034_ytm}"></div>
-    <div class=kv style="margin:10px 0"><label>한국 물가 %(0=자동)</label><input type=number step=any data-k="infl.kr" value="${(C.infl && +C.infl.kr) || 0}">
-      <label>미국 물가 %(0=자동)</label><input type=number step=any data-k="infl.us" value="${(C.infl && +C.infl.us) || 0}">
-      <label>브라질 IPCA %(0=Focus 자동)</label><input type=number step=any data-k="infl.br_manual" value="${INF().br_manual}">
-      <label>USD/KRW 가정(0=현재 유지)</label><input type=number step=any data-k="infl.usdkrw_assume" value="${INF().usdkrw_assume}"></div>
-    <div class=tbl><table><thead><tr><th>시나리오</th><th>확률%</th><th>BRL/KRW</th></tr></thead><tbody>${sc}</tbody></table></div>
+      <label>익절 TARGET</label><input type=number step=any data-k="target_price" value="${C.target_price}"></div>
     <p><button class=pri onclick="saveCfg()">저장</button> <span id=saved class=note></span></p>
     <p><button onclick="exportCfg()">📋 설정 복사</button> <button onclick="importCfg()">📥 설정 붙여넣기</button> <span class=note>다른 기기(폰)로 옮길 때: 한 기기에서 복사 → 메신저 '나에게 보내기' 등으로 전달 → 다른 기기에서 붙여넣기. 설정은 서버·GitHub에 올라가지 않고 각 기기 브라우저에만 저장됩니다.</span></p>
-    <div class=note>데이터: 환율=Frankfurter(ECB) · 국채=Tesouro Transparente(영업일 기준, 1~2일 지연) · 라이브=${C.downloads_glob} 중 가장 최근 파일. 국채·환율 데이터는 서버가 매일 자동 갱신합니다. 라이브 가격(rendimento-investir)은 갱신 때 Tesouro Direto에서 자동 다운로드되며, 상단 📂 CSV로 직접 올린 파일이 더 최신이면 그것을 씁니다. 물가: 한국=한국은행(ECOS) 기대인플레이션, 미국=미 국채 손익분기(BEI), 브라질=BCB Focus — 위 칸에 값을 넣으면 그 값이 우선합니다.</div>
+    <div class=note>시세·환율·물가는 갱신 때 자동 수집됩니다 — 환율 Frankfurter(ECB) · 국채 Tesouro Transparente·Tesouro Direto · 물가 한국은행(ECOS)·미 재무부·BCB Focus. 시나리오 확률·환율·달러채 가정은 04 탭에서 직접 수정합니다.</div>
   </div></section>`;
 };
 
-const CFG_KEYS = ["stages", "stop_price", "stop_fx", "target_price", "braz2034_ytm", "scenarios", "extra_fx_rows", "fx_range", "infl", "pol", "usd_inc", "rc3"];
+const CFG_KEYS = ["stages", "stop_price", "stop_fx", "target_price", "extra_fx_rows", "fx_range", "pol", "usd_inc", "rc3"];
 async function exportCfg() {
   const o = {}; CFG_KEYS.forEach(k => { if (C[k] !== undefined) o[k] = C[k]; });
   const t = JSON.stringify(o);
@@ -711,12 +727,11 @@ function importCfg() {
 }
 
 async function saveCfg() {
-  if (!C.infl) C.infl = {};
   document.querySelectorAll("[data-k]").forEach(el => {
     const path = el.dataset.k.split("."); let o = C;
     path.slice(0, -1).forEach(p => o = o[p]);
     const k = path.at(-1), v = el.type === "checkbox" ? el.checked : el.type === "number" ? parseFloat(el.value) : el.value;
-    if (typeof v === "number" && isNaN(v)) { if (path[0] === "infl") o[k] = 0; else if (k === "braz2034_ytm") return; else o[k] = null; return; }   // 빈 칸: 물가=0(자동), BRAZ YTM=기존값 유지
+    if (typeof v === "number" && isNaN(v)) { o[k] = path[0] === "infl" ? 0 : null; return; }   // 빈 칸: 물가=0(자동), 그 외=미설정
     o[k] = v;
   });
   try { localStorage.setItem("pf32cfg", JSON.stringify(C)); } catch (e) {}

@@ -51,20 +51,6 @@
     "low": 190,
     "high": 370
   },
-  "scenarios": [
-    {
-      "name": "시나리오 A",
-      "prob": 50,
-      "fx": 230,
-      "note": "예시 — 설정에서 본인 값으로 수정"
-    },
-    {
-      "name": "시나리오 B",
-      "prob": 50,
-      "fx": 300,
-      "note": "예시 — 설정에서 본인 값으로 수정"
-    }
-  ],
   "extra_fx_rows": [
     230,
     253,
@@ -73,13 +59,6 @@
     306,
     340
   ],
-  "braz2034_ytm": 6.48,
   "downloads_glob": "~/Downloads/rendimento-investir*.csv",
-  "history_days": 400,
-  "infl": {
-    "kr": 0,
-    "us": 0,
-    "br_manual": 0,
-    "usdkrw_assume": 0
-  }
+  "history_days": 400
 }
