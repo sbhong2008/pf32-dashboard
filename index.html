@@ -243,6 +243,12 @@ function usdEdit(el) {
   if (LOCAL) fetch("/api/config", {method: "POST", body: JSON.stringify(C)}).catch(() => {});
   render(true);
 }
+function usdRows(r, m) {   // 04-2 와 같은 공식: 선택 달러채의 시나리오별 원화 12개월 수익 · 5:5
+  const L = C.usd_bonds && C.usd_bonds.length ? C.usd_bonds : USD_DEF, b = L[Math.min(usdSel, L.length - 1)];
+  const usd = D.fx_usd && D.fx_usd.latest ? D.fx_usd.latest[1] : null, now = usd ? m.fx / usd : null, as = INF().usdkrw_assume;
+  const g = as > 0 && now ? (as / now - 1) * 100 : 0;
+  return {b, g, rows: r.rows.map(x => { const y = b.ytm + x.sp / 100, k = ((1 + y / 100) * (1 + g / 100) - 1) * 100, pf = x.krwP[0]; return {x, y, pf, k, mix: (pf + k) / 2}; })};
+}
 function usdSection(r, m) {
   const L = C.usd_bonds && C.usd_bonds.length ? C.usd_bonds : USD_DEF, b = L[Math.min(usdSel, L.length - 1)], kr = INF().kr;
   const usd = D.fx_usd && D.fx_usd.latest ? D.fx_usd.latest[1] : null, now = usd ? m.fx / usd : null, as = INF().usdkrw_assume;
@@ -514,13 +520,15 @@ V.fx = m => {
 };
 
 function scen(m) {
-  const b = C.braz2034_ytm;
+  const usd = D.fx_usd && D.fx_usd.latest ? D.fx_usd.latest[1] : null, now = usd ? m.fx / usd : null, as = INF().usdkrw_assume;
+  const g = as > 0 && now ? (as / now - 1) * 100 : 0, b0 = +C.braz2034_ytm > 0 ? +C.braz2034_ytm : 0;
+  const b = ((1 + b0 / 100) * (1 + g / 100) - 1) * 100;   // 달러채 원화 수익(USD/KRW 가정 없으면 = YTM)
   const rows = C.scenarios.map(s => {
     const t = total(m.ytm, m.fx, s.fx), p55 = (t + b) / 2;
     return {...s, fxchg: (s.fx / m.fx - 1) * 100, t, p55};
   });
   const w = rows.reduce((a, r) => a + r.prob, 0);
-  return {rows, ev: rows.reduce((a, r) => a + r.prob * r.t, 0) / w, ev55: rows.reduce((a, r) => a + r.prob * r.p55, 0) / w, base55: (m.ytm + b) / 2, w};
+  return {rows, ev: rows.reduce((a, r) => a + r.prob * r.t, 0) / w, ev55: rows.reduce((a, r) => a + r.prob * r.p55, 0) / w, base55: (m.ytm + b) / 2, b, g, w, braz: b0};
 }
 V.scen = m => {
   const s = scen(m);
@@ -623,15 +631,34 @@ function realCmpSection(m) {
   </div></section>`;
 }
 V.port = m => {
-  const s = scen(m), b = C.braz2034_ytm, lula = s.rows[0];
-  return `<section><h2>05 분산포트폴리오 5:5 — PF32 50% + USD BRAZ 2034 50%</h2><div class=body>
-    <div class=grid>
-      <div class=card><small>PF32 50% — BRL 채권</small><b class=mono>${f2(m.ytm)}%</b><div class=note>${f2(m.price)} BRL ≈ ${m.fx ? f2(m.price * m.fx / 1000, 1) : "—"}천원 (BRL/KRW ${f2(m.fx)})</div></div>
-      <div class=card><small>USD BRAZ 2034 50%</small><b class=mono>${f2(b)}%</b><div class=note>설정값(수동). USD 채권 · 환헤지 역할</div></div>
-      <div class=card><small>AVG YIELD</small><b class=mono>${f2(s.base55)}%</b><div class=note>(${f2(m.ytm)} + ${f2(b)}) / 2</div></div>
-      ${lula ? `<div class=card><small>${lula.name} 시 5:5</small><b class=mono>${pct(lula.p55, 2)}</b><div class=note>PF32 단독 ${pct(lula.t, 1)} 대비 방어</div></div>` : ""}
-    </div>
-    <div class=note>5:5 수익 = (PF32 총수익 + BRAZ YTM) / 2 로 단순화. BRAZ의 달러 환효과는 포함하지 않습니다.</div></div></section>`;
+  const r = polCalc(m), u = usdRows(r, m), kr = INF().kr, sc = scen(m), I = USD_INC(), b = sc.braz;
+  const ev = f => u.rows.reduce((a, o) => a + o.x.w * f(o), 0);
+  const comp = [["헤알채 PF32 100%", o => o.pf], ["5:5 (PF32 + 달러채)", o => o.mix], ["달러채 100%", o => o.k]];
+  const evs = comp.map(([, f]) => ev(f)), mn = comp.map(([, f]) => Math.min(...u.rows.map(f))), mx = comp.map(([, f]) => Math.max(...u.rows.map(f)));
+  const top = arr => arr.indexOf(Math.max(...arr)), low = arr => arr.indexOf(Math.min(...arr));
+  const fw = sc.rows.reduce((a, o) => o.t < a.t ? o : a, sc.rows[0]), fwv = [fw.t, fw.p55, sc.b];   // 헤알 약세 최악 환율 시나리오
+  const won = v => (I.amt * v / 100 >= 0 ? "+" : "") + f2(I.amt * v / 100, 0) + "만";
+  const cards = comp.map(([n], i) => `<div class=card><small>${n}</small><b class=mono>${pct(evs[i], 1)}</b><div class=note>EV 12개월(원화) · 실질 ${pct(real(evs[i], kr), 1)}<br>최악 ${pct(mn[i], 1)} · 최선 ${pct(mx[i], 1)}<br><b>헤알 약세(${fw.name.split(" ")[0]}, ${f2(fw.fx)}): ${pct(fwv[i], 1)}</b><br>${f2(I.amt, 0)}만원 기준 EV ${won(evs[i])}</div></div>`).join("");
+  const rowsHtml = u.rows.map(o => { const v = comp.map(([, f]) => f(o)), bi = top(v);
+    return `<tr><td style="white-space:normal">${o.x.name.split(" ")[0]} <small>${f2(o.x.w * 100, 0)}%</small></td>${v.map((x, j) => `<td class=r${j === bi ? ' style="font-weight:700;background:rgba(34,160,70,.2)"' : ""}>${pct(x, 1)}</td>`).join("")}<td>${comp[bi][0].split(" ")[0]}</td></tr>`; }).join("");
+  const bi = top(evs), wi = low(mn);
+  const verdict = `<b>두 관점을 함께 보세요.</b> ① S1~S4(진입 후 환율 불변): EV 최선 <b>${comp[bi][0]}</b>(${pct(evs[bi], 1)}), 5:5는 PF32 대비 EV ${pct(evs[1] - evs[0], 1)}p를 포기합니다. ② 헤알 약세(${fw.name.split(" ")[0]}, BRL/KRW ${f2(fw.fx)}): PF32 ${pct(fwv[0], 1)} → 5:5 ${pct(fwv[1], 1)}로 하방을 ${pct(fwv[1] - fwv[0], 1)}p 방어, 달러채 100%는 ${pct(fwv[2], 1)}. 5:5는 헤알 약세 보험료로 위 EV 차이를 지불하는 구조입니다. (S1~S4는 환율을 고정하므로 PF32의 환위험이 드러나지 않습니다.)`;
+  return `<section><h2>05 헤알채 · 달러채 · 5:5 비교 요약 — 04 분석 종합</h2><div class=body>
+    <div class=note style="margin:0 0 8px">04-2의 S1~S4(확인 후 매수, 진입 후 환율 불변 가정, 선택 종목 <b>${u.b.n}</b>, USD/KRW ${u.g ? pct(u.g, 1) + " 가정" : "변동 없음"})를 그대로 모아 세 구성을 나란히 봅니다. 종목 선택·가정 수정은 04-2, 투자금은 04-2 이자 계산 입력.</div>
+    <div class=grid>${cards}</div>
+    <p class=note style="margin:8px 0">${verdict}</p>
+    <div class=tbl><table class=mono><thead><tr><th>시나리오 (확인 후 매수)</th>${comp.map(([n]) => `<th class=r>${n.replace(" (PF32 + 달러채)", "")}<br><small>원화 12개월</small></th>`).join("")}<th>시나리오 최선</th></tr></thead><tbody>${rowsHtml}
+    <tr style="border-top:2px solid var(--ink);font-weight:700"><td>기대값 EV</td>${evs.map(v => `<td class=r>${pct(v, 1)}</td>`).join("")}<td>${comp[bi][0].split(" ")[0]}</td></tr>
+    <tr><td>EV 실질(원)</td>${evs.map(v => `<td class=r>${pct(real(v, kr), 1)}</td>`).join("")}<td></td></tr>
+    <tr><td>최악 / 최선 폭</td>${comp.map((_, i) => `<td class=r>${pct(mn[i], 1)} / ${pct(mx[i], 1)}</td>`).join("")}<td></td></tr>
+    <tr><td>투자금 ${f2(I.amt, 0)}만원 EV 손익</td>${evs.map(v => `<td class=r>${won(v)}</td>`).join("")}<td></td></tr></tbody></table></div>
+    <div class=note>5:5 = (PF32 원화 수익 + 달러채 원화 수익) ÷ 2 (재조정·이자 재투자 단순화). 달러채는 이자를 주고 PF32는 만기 일시 수령이므로 현금흐름은 04-2 이자 계산 참고. 04-2와 같은 표이므로 값이 일치해야 하며, 가산금리 변동·환율은 <b>가정</b>입니다. 세금·수수료·환전비용 미반영, 투자 권유 아님.</div>
+    <h3 style="margin:14px 0 4px;font-size:14px">환율 시나리오 기준 (04-1 표와 동일 · BRAZ 2034 수동 YTM ${b > 0 ? f2(b, 2) + "%" : "<b style=\"color:#c0392b\">⚠ 미입력(0%로 계산) — 설정 탭에서 입력</b>"})</h3>
+    <div class=tbl><table class=mono><thead><tr><th>시나리오</th><th class=r>BRL/KRW</th><th class=r>PF32 총수익</th><th class=r>달러채<br><small>${f2(b, 2)}% ${sc.g ? "·USD/KRW " + pct(sc.g, 1) : ""}</small></th><th class=r>5:5</th><th class=r>5:5 실질(원)</th></tr></thead><tbody>
+    ${sc.rows.map(o => `<tr><td>${o.name}<small> ${o.prob}%</small></td><td class=r>${f2(o.fx)}</td><td class=r>${pct(o.t, 1)}</td><td class=r>${pct(sc.b, 1)}</td><td class=r><b>${pct(o.p55, 1)}</b></td><td class=r>${pct(real(o.p55, kr), 1)}</td></tr>`).join("")}
+    <tr style="border-top:2px solid var(--ink);font-weight:700"><td>EV</td><td></td><td class=r>${pct(sc.ev, 1)}</td><td class=r>${pct(sc.b, 1)}</td><td class=r>${pct(sc.ev55, 1)}</td><td class=r>${pct(real(sc.ev55, kr), 1)}</td></tr></tbody></table></div>
+    <div class=note>이 표의 달러채 수익은 진입 후 12개월 동안 만기수익률이 그대로 유지된다는 단순 가정입니다(가산금리 변동 미반영). 위 S1~S4 표는 가산금리 변동을 반영하므로 두 표의 달러채·5:5 값은 기준이 달라 다를 수 있습니다.</div>
+  </div></section>`;
 };
 
 let bondQ = "";
@@ -663,7 +690,7 @@ V.settings = m => {
     <div class=tbl><table><thead><tr><th>시나리오</th><th>확률%</th><th>BRL/KRW</th></tr></thead><tbody>${sc}</tbody></table></div>
     <p><button class=pri onclick="saveCfg()">저장</button> <span id=saved class=note></span></p>
     <p><button onclick="exportCfg()">📋 설정 복사</button> <button onclick="importCfg()">📥 설정 붙여넣기</button> <span class=note>다른 기기(폰)로 옮길 때: 한 기기에서 복사 → 메신저 '나에게 보내기' 등으로 전달 → 다른 기기에서 붙여넣기. 설정은 서버·GitHub에 올라가지 않고 각 기기 브라우저에만 저장됩니다.</span></p>
-    <div class=note>데이터: 환율=Frankfurter(ECB) · 국채=Tesouro Transparente(영업일 기준, 1~2일 지연) · 라이브=${C.downloads_glob} 중 가장 최근 파일. 국채·환율 데이터는 서버가 매일 자동 갱신합니다. 라이브 가격은 상단 📂 CSV로 rendimento-investir 파일을 올리면 반영됩니다.</div>
+    <div class=note>데이터: 환율=Frankfurter(ECB) · 국채=Tesouro Transparente(영업일 기준, 1~2일 지연) · 라이브=${C.downloads_glob} 중 가장 최근 파일. 국채·환율 데이터는 서버가 매일 자동 갱신합니다. 라이브 가격(rendimento-investir)은 갱신 때 Tesouro Direto에서 자동 다운로드되며, 상단 📂 CSV로 직접 올린 파일이 더 최신이면 그것을 씁니다. 물가: 한국=한국은행(ECOS) 기대인플레이션, 미국=미 국채 손익분기(BEI), 브라질=BCB Focus — 위 칸에 값을 넣으면 그 값이 우선합니다.</div>
   </div></section>`;
 };
 
@@ -689,6 +716,7 @@ async function saveCfg() {
     const path = el.dataset.k.split("."); let o = C;
     path.slice(0, -1).forEach(p => o = o[p]);
     const k = path.at(-1), v = el.type === "checkbox" ? el.checked : el.type === "number" ? parseFloat(el.value) : el.value;
+    if (typeof v === "number" && isNaN(v)) { if (path[0] === "infl") o[k] = 0; else if (k === "braz2034_ytm") return; else o[k] = null; return; }   // 빈 칸: 물가=0(자동), BRAZ YTM=기존값 유지
     o[k] = v;
   });
   try { localStorage.setItem("pf32cfg", JSON.stringify(C)); } catch (e) {}
