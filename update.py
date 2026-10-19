@@ -152,6 +152,23 @@ def us_breakeven():
     return out
 
 
+def update_ust():
+    """미 재무부 일별 명목 국채금리 3·5·7·10년(키 불필요) 최근 약 150영업일 — 달러표시 브라질 채권의 입력 시세 이후 금리 변동 추정용."""
+    y = date.today().year; rows = {}
+    for yy in (y - 1, y):
+        try: cur = _ust("daily_treasury_yield_curve", yy)
+        except Exception as e:
+            if yy == y: raise
+            log("미 국채 전년도 이력 생략:", e); continue
+        for d, r in cur.items():
+            try: rows[datetime.strptime(d, "%m/%d/%Y").strftime("%Y-%m-%d")] = [float(r[k]) for k in ("3 YR", "5 YR", "7 YR", "10 YR")]
+            except (KeyError, ValueError): continue
+    ser = [[d] + v for d, v in sorted(rows.items())][-150:]
+    if not ser: raise ValueError("미 국채 금리 데이터 없음")
+    log(f"미 국채 금리 이력 {len(ser)}일, 최신 {ser[-1]}")
+    return {"cols": [3, 5, 7, 10], "series": ser}
+
+
 def update_infl_kus():
     """한국·미국 소비자물가 전년동월비(OECD SDMX, 키 불필요). 최신월 값 + 최근 13개월 이력. 한 나라가 실패하면 예외."""
     out = {}
@@ -313,6 +330,9 @@ def main():
     try: infl = {"br": update_infl()}; status["infl"] = "ok"
     except Exception as e:
         log("IPCA 기대 실패:", e); status["infl"] = f"error: {e}"; infl = prev.get("infl")
+    try: ust = update_ust(); status["ust"] = "ok"
+    except Exception as e:
+        log("미 국채 금리 이력 실패(이전 값 유지):", e); status["ust"] = f"error: {e}"; ust = prev.get("ust")
     prev_infl = prev.get("infl") or {}
     try: infl = dict(infl or {}, **update_infl_kus())
     except Exception as e:
@@ -353,7 +373,7 @@ def main():
     out = {"generated": datetime.now().astimezone().isoformat(timespec="seconds"), "status": status,
            "live": live, "live_info": live_info, "bonds": sorted(bonds, key=lambda b: (b["tipo"], b["venc"][-4:])),
            "series": series,
-           "fx": {"latest": fx[-1] if fx else None, "series": fx}, "fx_usd": fx_usd, "fx_stats": fxs, "infl": infl}
+           "fx": {"latest": fx[-1] if fx else None, "series": fx}, "fx_usd": fx_usd, "fx_stats": fxs, "infl": infl, "ust": ust}
     (DATA / "data.json").write_text(json.dumps(out, ensure_ascii=False), encoding="utf-8")
     log("data.json 생성 완료", status)
 
