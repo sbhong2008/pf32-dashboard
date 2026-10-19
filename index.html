@@ -47,7 +47,10 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}
 .hero small{display:block;opacity:.7;font-size:10px;letter-spacing:.08em;margin-bottom:2px}
 .hero .big{font-size:36px;font-weight:900;line-height:1}
 .hero .mid{font-size:22px;font-weight:800;line-height:1.1}
-.pgrid{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));margin:10px 0}
+.pgrid{display:grid;gap:12px;grid-template-columns:1fr;margin:10px 0}
+.pb2{display:grid;grid-template-columns:minmax(230px,290px) 1fr;gap:14px;align-items:start}
+@media (max-width:720px){.pb2{grid-template-columns:1fr}}
+.pleg{font-size:10.5px;opacity:.75;margin-top:2px;line-height:1.5}
 .panel{border:2px solid var(--ink);background:var(--paper)}
 .panel .ph{background:var(--ink);color:var(--paper);padding:5px 10px;font-weight:800;font-size:12px;display:flex;justify-content:space-between;gap:6px}
 .panel .ph small{opacity:.75;font-weight:400}
@@ -55,7 +58,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}
 .panel .big{font-size:32px;font-weight:900;line-height:1.05}
 .panel .sub{font-size:11px;opacity:.7;margin:2px 0 8px}
 .kvr{display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:3px 0;border-bottom:1px solid var(--line);font-size:12px}
-.kvr span{opacity:.7}.kvr b{font-size:13px;text-align:right}.kvr small{display:block;opacity:.65;font-weight:400;font-size:10px}
+.kvr span{opacity:.7;white-space:nowrap}.kvr b{font-size:13px;text-align:right}.kvr small{display:block;opacity:.65;font-weight:400;font-size:10px}
 .panel.best{border-width:3px}
 .callout{border:2px solid var(--ink);padding:9px 12px;margin:10px 0;font-size:14px;line-height:1.55}
 .callout.go{border-color:var(--ok);background:var(--okbg)}
@@ -424,7 +427,7 @@ function spark(vals, w = 560, h = 90, mark) {
 
 // 가격(PU, 좌축)과 수익률(명목·실질, 우축)을 한 차트에 겹쳐 그림
 let chartSeq = 0; const CH = {};
-function dualChart(pu, nom, rl, w = 560, h = 190, mark, dates, full) {
+function dualChart(pu, nom, rl, w = 560, h = 190, mark, dates, full, pn = "PU") {
   const n = pu.length; if (n < 2) return "<div class=note>데이터 부족</div>";
   const M = 76, sx = i => M + i * (w - 2 * M) / (n - 1);   // 좌우 여백에 시작·끝 값 라벨을 넣는다
   const pmn = Math.min(...pu), pmx = Math.max(...pu), ymn = Math.min(...rl), ymx = Math.max(...nom);
@@ -433,12 +436,12 @@ function dualChart(pu, nom, rl, w = 560, h = 190, mark, dates, full) {
   const mk = mark != null && mark >= pmn && mark <= pmx ? `<line x1="${M}" x2="${w - M}" y1="${sp(mark)}" y2="${sp(mark)}" stroke="currentColor" stroke-dasharray="1 4" opacity=".7"/><text x="${M + 2}" y="${sp(mark) - 3}" font-size="9">지정가 ${f2(mark)}</text>` : "";
   // 시점 값 라벨: 각 곡선의 첫 점(좌)·마지막 점(우). 서로 겹치면 위아래로 밀어낸다
   const pack = ls => { ls.sort((a, b) => a.y - b.y); for (let i = 1; i < ls.length; i++) if (ls[i].y - ls[i - 1].y < 11) ls[i].y = ls[i - 1].y + 11; return ls; };
-  const L = pack([{y: sp(pu[0]), t: "PU " + f2(pu[0])}, {y: sy(nom[0]), t: "명목 " + f2(nom[0]) + "%"}, {y: sy(rl[0]), t: "실질 " + f2(rl[0]) + "%"}]);
-  const R = pack([{y: sp(pu[n - 1]), t: "PU " + f2(pu[n - 1])}, {y: sy(nom[n - 1]), t: "명목 " + f2(nom[n - 1]) + "%"}, {y: sy(rl[n - 1]), t: "실질 " + f2(rl[n - 1]) + "%"}]);
+  const L = pack([{y: sp(pu[0]), t: pn + " " + f2(pu[0])}, {y: sy(nom[0]), t: "명목 " + f2(nom[0]) + "%"}, {y: sy(rl[0]), t: "실질 " + f2(rl[0]) + "%"}]);
+  const R = pack([{y: sp(pu[n - 1]), t: pn + " " + f2(pu[n - 1])}, {y: sy(nom[n - 1]), t: "명목 " + f2(nom[n - 1]) + "%"}, {y: sy(rl[n - 1]), t: "실질 " + f2(rl[n - 1]) + "%"}]);
   const lab = (arr, x, anc) => arr.map(o => `<text x="${x}" y="${(o.y + 3).toFixed(1)}" text-anchor="${anc}" font-weight="700" font-size="10">${o.t}</text>`).join("");
   const dt = dates && dates.length === n ? `<text x="${M}" y="${h + 11}" text-anchor="middle">${dates[0]}</text><text x="${w - M}" y="${h + 11}" text-anchor="middle">${dates[n - 1]}</text>` : "";
   const id = "ch" + (++chartSeq);
-  CH[id] = {n, M, w, h, pmn, pmx, ymn, ymx, pu, nom, rl, full: full || dates || []};
+  CH[id] = {n, M, w, h, pmn, pmx, ymn, ymx, pu, nom, rl, pn, full: full || dates || []};
   return `<svg id="${id}" viewBox="0 0 ${w} ${h + (dt ? 14 : 0)}" width="100%" style="color:var(--ink);font-family:inherit;font-size:11px;touch-action:pan-y">
     ${line(pu, sp, 'stroke="currentColor" stroke-width="1.6"')}
     ${line(nom, sy, 'stroke="currentColor" stroke-width="1" opacity=".38"')}
@@ -469,7 +472,7 @@ function chartHover(ev, id) {
   const iso = (c.full[i] || "").match(/\d{2}\/\d{2}\/\d{4}/), d = iso ? iso[0].split("/").reverse().join("-") : null;
   const wd = d ? " (" + WD[new Date(d + "T00:00:00").getDay()] + ")" : "";
   const dRl = i > 0 ? (c.rl[i] - c.rl[i - 1]) * 100 : null;
-  const lines = [(c.full[i] || "") + wd, "PU " + f2(c.pu[i]), "명목 " + f2(c.nom[i]) + "%", "실질 " + f2(c.rl[i]) + "%" + (dRl == null ? "" : "  " + (dRl >= 0 ? "▲+" : "▼") + f2(dRl, 1) + "bp")];
+  const lines = [(c.full[i] || "") + wd, c.pn + " " + f2(c.pu[i]), "명목 " + f2(c.nom[i]) + "%", "실질 " + f2(c.rl[i]) + "%" + (dRl == null ? "" : "  " + (dRl >= 0 ? "▲+" : "▼") + f2(dRl, 1) + "bp")];
   const tw = Math.max(...lines.map(s => s.length)) * 6.4 + 14, th = 4 * 14 + 8, tx = x + 10 + tw > c.w ? x - 10 - tw : x + 10, ty = 6;
   set("b", {x: tx, y: ty, width: tw, height: th});
   lines.forEach((s, k) => { const e = set("t" + k, {x: tx + 7, y: ty + 16 + k * 14}); e.textContent = s; });
@@ -532,6 +535,21 @@ V.overview = m => {
       const mixY = (m.ytm + yU) / 2, mixDy = dy != null && dyU != null ? (dy + dyU) / 2 : null;
       const mixKrw = pfKrw != null && uKrw != null ? (pfKrw + uKrw) / 2 : null;
       const realPf = real(m.ytm, brI), realU = real(yU, kr.us), realMix = (realPf + realU) / 2;
+      const Bm = new Map(((D.fx_usd && D.fx_usd.series) || []).map(r => [r[0], r[1]])), ukPts = fxS.filter(r => Bm.has(r[0])).map(r => [r[0], r[1] / Bm.get(r[0])]);
+      const ukAt = d => { const r = [...ukPts].reverse().find(x => x[0] <= d); return r ? r[1] : null; };
+      const shortD = d => brDate(d).slice(0, 5), liveFull = m.useLive ? "LIVE " + brDate(D.live_info.mtime.slice(0, 10)) : null;
+      // ② 달러채 추정 시계열 (최근 91영업일)
+      const us91 = u.ok ? u.series.slice(-91) : [];
+      const chU = {p: us91.map(o => o.p), n: us91.map(o => o.y), r: us91.map(o => real(o.y, kr.us)), d: us91.map(o => shortD(o.d)), f: us91.map(o => brDate(o.d))};
+      // ③ 5:5 합성: PF32·달러채를 원화로 환산해 50:50 평가지수(시작=100), 평균 명목·실질 YTM
+      const pfMap = new Map(hist.map(r => [r[0], {y: r[1], p: r[2], r: real(r[1], inflAt(r[0]))}])), uMap = new Map(u.series ? u.series.map(o => [o.d, o]) : []);
+      const days = u.ok ? u.series.map(o => o.d).filter(d => pfMap.has(d) && fxAt(d) && ukAt(d)).slice(-90) : [];
+      const mx = {i: [], n: [], r: [], d: [], f: []};
+      if (days.length > 1) {
+        const b0 = {a: pfMap.get(days[0]).p * fxAt(days[0]), b: uMap.get(days[0]).p * ukAt(days[0])}, idx = (pf, us) => 100 * (0.5 * pf / b0.a + 0.5 * us / b0.b);
+        days.forEach(d => { const a = pfMap.get(d), b = uMap.get(d); mx.i.push(idx(a.p * fxAt(d), b.p * ukAt(d))); mx.n.push((a.y + b.y) / 2); mx.r.push((a.r + real(b.y, kr.us)) / 2); mx.d.push(shortD(d)); mx.f.push(brDate(d)); });
+        if (m.useLive && uk) { mx.i.push(idx(m.price * m.fx, u.last.p * uk.now)); mx.n.push((m.ytm + u.last.y) / 2); mx.r.push((realPf + realU) / 2); mx.d.push("LIVE"); mx.f.push(liveFull); }
+      }
       const kv = (k, v, sub) => `<div class=kvr><span>${k}</span><b class=mono>${v}${sub ? `<small>${sub}</small>` : ""}</b></div>`;
       const ymap = new Map((D.series[C.tracked.label] || []).map(r => [r[0], r[1]]));
       const mixSer = u.ok ? u.series.filter(o => ymap.has(o.d)).map(o => (ymap.get(o.d) + o.y) / 2).slice(-60) : [];
@@ -539,29 +557,30 @@ V.overview = m => {
       const dayc = dayChg(m, m.ytm, brI, m.before ? m.before[1] : null);
       return `${nx ? `<div class="callout ${reached ? "go" : ""}" style="cursor:pointer" onclick="tab='stages';render()">${reached ? "🔔 <b>체결 조건 충족</b>" : "⏳ <b>대기</b>"} — ${m.next.name} 지정가 <b class=mono>${f2(m.next.price)}</b> · 현재 <b class=mono>${f2(m.price)}</b> · ${reached ? "지정가 이하 (02 분할매수에서 확인)" : f2(m.price - m.next.price) + " BRL 남음"}</div>` : ""}
       <div class=pgrid>
-        <div class=panel><div class=ph><span>① 헤알채 · ${C.tracked.label}</span><small>BRL 고정금리</small></div><div class=pb>
+        <div class=panel><div class=ph><span>① 헤알채 · ${C.tracked.label}</span><small>BRL 고정금리</small></div><div class="pb pb2"><div>
           <div class="big mono">${f2(m.price)}</div><div class=sub>BRL 단가 PU ≈ ${m.fx ? f2(m.price * m.fx / 1000, 1) : "—"}천원 · ${m.source}</div>
           ${kv("만기수익률 YTM", f2(m.ytm) + "%", dbp(dy) + " " + bLab)}${kv("직전 대비 가격", dp == null ? "—" : (dp >= 0 ? "+" : "") + f2(dp))}
           ${kv("실질 YTM", pct(realPf, 2), (dayc ? dayc.txt + " " + bLab + " · 직전 " + pct(real(m.before[1], brI), 2) + " · " : "") + "IPCA 기대 " + f2(brI) + "%")}${kv("BRL/KRW", f2(m.fx), (D.fx.latest ? brDate(D.fx.latest[0]) + " ECB" : "") + (fxChg == null ? "" : " · " + pct(fxChg, 2) + " " + bLab))}
-          ${kv("원화 평가 변동", pc1(pfKrw), "가격×환율 · " + bLab)}${kv("연속 하락", down + "일")}
-          <div style="margin-top:6px">${spark(tr.slice(-60), 300, 60)}<div class=note style="margin-top:0">PU 최근 60일</div></div></div></div>
-        <div class=panel><div class=ph><span>② 달러표시채 · ${u.b.n.replace("Brazil ", "BRAZ ")}</span><small>USD${u.ok ? " · 추정" : " · 수동"}</small></div><div class=pb>
+          ${kv("원화 평가 변동", pc1(pfKrw), "가격×환율 · " + bLab)}${kv("연속 하락", down + "일")}</div>
+          <div>${dualChart(tr, nomS, rlS, 560, 190, C.stages.find(s => !s.filled && s.price > 0)?.price, dts, fullD, "PU")}
+            <div class=pleg>실선=PU(좌축) · 회색=명목 YTM(우축) · 점선=<b>실질 YTM</b>(우축, 각 날짜의 Focus IPCA 기대로 계산) · 최근 91영업일 · 점선 가로선=다음 분할매수 지정가</div></div></div></div>
+        <div class=panel><div class=ph><span>② 달러표시채 · ${u.b.n.replace("Brazil ", "BRAZ ")}</span><small>USD${u.ok ? " · 추정" : " · 수동"}</small></div><div class="pb pb2"><div>
           <div class="big mono">${f2(pU)}</div><div class=sub>USD 가격 ${u.ok ? "(추정)" : "(수동 입력)"} · 시세 ${USD_ASOF} 입력${uStale}</div>
           ${kv("만기수익률 YTM", f2(yU) + "%", u.ok ? dbp(dyU) + " " + uLab + " 추정" : "입력값")}${kv("직전 대비 가격", dpU == null ? "—" : (dpU >= 0 ? "+" : "") + f2(dpU))}
           ${kv("실질 YTM", pct(realU, 2), "미국 물가 " + f2(kr.us) + "%")}${kv("USD/KRW", uk ? f2(uk.now) : "—", ukChg == null ? "" : pct(ukChg, 2) + " " + uLab)}
-          ${kv("원화 평가 변동", pc1(uKrw), "가격×환율 · " + uLab)}${kv("미 국채 " + (u.ok ? f2(u.T, 1) + "년" : "") + " 금리", u.ok ? f2(u.last.y - u.sp0) + "%" : "—", u.ok ? "가산금리 " + f2(u.sp0 * 100, 0) + "bp 고정 가정" : "")}
-          <div style="margin-top:6px">${u.ok ? spark(u.series.slice(-60).map(o => o.p), 300, 60) : ""}<div class=note style="margin-top:0">${u.ok ? "추정 가격 최근 60일 · 입력 시세 이후 미 국채 금리 변동만 반영" : "미 국채 금리 자료 없음 — 입력 시세 그대로 표시"}</div></div></div></div>
-        <div class=panel><div class=ph><span>③ 5:5 포트폴리오</span><small>PF32 50% + 달러채 50%</small></div><div class=pb>
+          ${kv("원화 평가 변동", pc1(uKrw), "가격×환율 · " + uLab)}${kv("미 국채 " + (u.ok ? f2(u.T, 1) + "년" : "") + " 금리", u.ok ? f2(u.last.y - u.sp0) + "%" : "—", u.ok ? "가산금리 " + f2(u.sp0 * 100, 0) + "bp 고정 가정" : "")}</div>
+          <div>${u.ok ? dualChart(chU.p, chU.n, chU.r, 560, 190, null, chU.d, chU.f, "가격") : "<div class=note>미 국채 금리 자료 없음 — 입력 시세 그대로 표시</div>"}
+            <div class=pleg>${u.ok ? `실선=추정 가격(좌축) · 회색=명목 YTM(우축) · 점선=<b>실질 YTM</b>(우축, 미국 물가 ${f2(kr.us)}% 고정) · 최근 91영업일 · ${USD_ASOF} 입력 시세 기준, 미 국채 금리 변동만 반영(가산금리 고정, 입력일 이전은 소급 추정)` : ""}</div></div></div></div>
+        <div class=panel><div class=ph><span>③ 5:5 포트폴리오</span><small>PF32 50% + 달러채 50%</small></div><div class="pb pb2"><div>
           <div class="big mono">${f2(mixY)}%</div><div class=sub>평균 YTM = (${f2(m.ytm)} + ${f2(yU)}) ÷ 2 · 재조정·환헤지 없음</div>
           ${kv("평균 YTM 변동", dbp(mixDy), "각 구성의 직전 대비 평균")}${kv("실질 평균 YTM", pct(realMix, 2), "헤알 " + pct(realPf, 2) + " · 달러 " + pct(realU, 2))}
           ${kv("원화 평가 변동", pc1(mixKrw), "50:50 · 구성별 직전 대비")}${kv("구성 YTM", f2(m.ytm) + "% / " + f2(yU) + "%", "PF32 / 달러채")}
-          ${kv("YTM 격차", f2(m.ytm - yU) + "%p", "헤알채가 높은 만큼 환위험 부담")}
-          <div style="margin-top:6px">${mixSer.length > 2 ? spark(mixSer, 300, 60) : ""}<div class=note style="margin-top:0">${mixSer.length > 2 ? "평균 YTM 최근 60일(달러채는 추정)" : ""}</div></div></div></div>
+          ${kv("YTM 격차", f2(m.ytm - yU) + "%p", "헤알채가 높은 만큼 환위험 부담")}</div>
+          <div>${mx.i.length > 2 ? dualChart(mx.i, mx.n, mx.r, 560, 190, null, mx.d, mx.f, "지수") : "<div class=note>데이터 부족</div>"}
+            <div class=pleg>${mx.i.length > 2 ? "실선=5:5 원화 평가지수(좌축, 시작=100, PF32·달러채를 원화로 환산해 50:50) · 회색=평균 명목 YTM(우축) · 점선=<b>평균 실질 YTM</b>(우축) · 달러채는 추정" : ""}</div></div></div></div>
       </div>`; })()}
     ${timesPanel(m)}
     <div class=tbl style="margin-top:10px"><table class=mono><thead><tr><th>종목</th><th class=r>직전</th><th class=r>최신</th><th class=r>변동</th></tr></thead><tbody>${rows}</tbody></table></div>
-    <div style="margin-top:10px">${dualChart(tr, nomS, rlS, 560, 190, C.stages.find(s => !s.filled && s.price > 0)?.price, dts, fullD)}
-      <div class=note><svg width=28 height=8 style="vertical-align:middle"><line x1=0 x2=28 y1=4 y2=4 stroke=currentColor stroke-width=2  opacity=1/></svg> ${C.tracked.label} 매수 단가 PU (좌축) &nbsp; <svg width=28 height=8 style="vertical-align:middle"><line x1=0 x2=28 y1=4 y2=4 stroke=currentColor stroke-width=1.2  opacity=0.4/></svg> 명목 YTM (우축) &nbsp; <svg width=28 height=8 style="vertical-align:middle"><line x1=0 x2=28 y1=4 y2=4 stroke=currentColor stroke-width=2 stroke-dasharray="5 3" opacity=1/></svg> <b>실질 YTM</b> (우축, 각 날짜의 Focus IPCA 기대로 계산) · 최근 ${tr.length}영업일${C.stages.some(s => !s.filled && s.price > 0) ? " · 점선=다음 분할매수 지정가" : ""}</div></div>
   </div></section>`;
 };
 
