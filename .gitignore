@@ -13,3 +13,6 @@ data/inbox/
 *.pem
 *.key
 __pycache__/
+
+# 알림 상태(로컬)
+data/signal_state.json

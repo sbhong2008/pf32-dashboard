@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """PF32 데이터 업데이터 — 환율(BRL/KRW)·브라질 국채 CSV를 내려받아 data/data.json 생성.
 표준 라이브러리만 사용. 매일 실행해도 안전(ETag/Range 이어받기, 변경 없으면 건너뜀)."""
-import csv, glob, json, os, shutil, sys, time, urllib.request, urllib.error
+import csv, glob, json, os, shutil, subprocess, sys, time, urllib.request, urllib.error
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -149,6 +149,45 @@ def us_breakeven():
     d = days[-1]; b5 = float(nom[d]["5 YR"]) - float(real[d]["5 YR"]); b7 = float(nom[d]["7 YR"]) - float(real[d]["7 YR"])
     out = {"v": round((b5 + b7) / 2, 3), "y5": round(b5, 3), "y7": round(b7, 3), "period": datetime.strptime(d, "%m/%d/%Y").strftime("%Y-%m-%d")}
     log("미 국채 손익분기 인플레이션:", out)
+    return out
+
+
+REACH_THR = [25, 50, 75, 100, 125, 150, 175, 200, 250, 300]   # 금리 상승폭(bp)
+REACH_HOR = [21, 63, 126, 252]                                  # 영업일(약 1·3·6·12개월)
+
+
+def update_yield_reach(path=None):
+    """잔존 4~6.5년 Prefixado(≈PF32)의 과거 금리 상승 도달 빈도: 시작일로부터 N영업일 안에 금리가 한 번이라도 +X bp 이상 오른 시작일 비율(2016-10 이후, 3일 간격 표본).
+    매수 사다리에서 '이 가격(=금리 +X bp)에 과거 얼마나 자주 닿았나'를 보여 주는 용도. 국채 CSV 캐시가 없으면 예외."""
+    path = path or CACHE / "PrecoTaxaTesouroDireto.csv"
+    if not Path(path).exists(): raise FileNotFoundError("국채 CSV 캐시 없음")
+    B = {}
+    with open(path, encoding="utf-8", newline="") as f:
+        for r in csv.reader(f, delimiter=";"):
+            if not r or r[0] != "Tesouro Prefixado": continue
+            try: d = datetime.strptime(r[2], "%d/%m/%Y").date(); mv = datetime.strptime(r[1], "%d/%m/%Y").date(); y = float(r[3].replace(",", "."))
+            except (ValueError, IndexError): continue
+            if d >= date(2016, 10, 21): B.setdefault(mv, []).append((d, y))
+    for v in B.values(): v.sort()
+    idx = {mv: {x[0]: i for i, x in enumerate(v)} for mv, v in B.items()}
+    dates = sorted({x[0] for v in B.values() for x in v})
+    hit = {h: [0] * len(REACH_THR) for h in REACH_HOR}; tot = {h: 0 for h in REACH_HOR}
+    for dd in dates[::3]:
+        best = None
+        for mv in B:
+            if dd in idx[mv]:
+                t = (mv - dd).days / 365.25
+                if 4.0 <= t <= 6.5 and (best is None or abs(t - 5.2) < abs(best[0] - 5.2)): best = (t, mv)
+        if not best: continue
+        v = B[best[1]]; i = idx[best[1]][dd]
+        for h in REACH_HOR:
+            seg = v[i:i + h + 1]
+            if len(seg) < h + 1: continue
+            tot[h] += 1; rise = max(y for _, y in seg[1:]) - seg[0][1]
+            for k, thr in enumerate(REACH_THR):
+                if rise >= thr / 100: hit[h][k] += 1
+    out = {"thr": REACH_THR, "hor": REACH_HOR, "p": [[round(hit[h][k] / tot[h] * 100) if tot[h] else None for k in range(len(REACH_THR))] for h in REACH_HOR], "n": [tot[h] for h in REACH_HOR]}
+    log("금리 상승 도달 빈도:", out["p"][:2], "표본", out["n"])
     return out
 
 
@@ -333,6 +372,9 @@ def main():
     try: ust = update_ust(); status["ust"] = "ok"
     except Exception as e:
         log("미 국채 금리 이력 실패(이전 값 유지):", e); status["ust"] = f"error: {e}"; ust = prev.get("ust")
+    try: reach = update_yield_reach(); status["reach"] = "ok"
+    except Exception as e:
+        log("금리 도달 빈도 계산 실패(이전 값 유지):", e); status["reach"] = f"error: {e}"; reach = prev.get("yield_reach")
     prev_infl = prev.get("infl") or {}
     try: infl = dict(infl or {}, **update_infl_kus())
     except Exception as e:
@@ -373,9 +415,14 @@ def main():
     out = {"generated": datetime.now().astimezone().isoformat(timespec="seconds"), "status": status,
            "live": live, "live_info": live_info, "bonds": sorted(bonds, key=lambda b: (b["tipo"], b["venc"][-4:])),
            "series": series,
-           "fx": {"latest": fx[-1] if fx else None, "series": fx}, "fx_usd": fx_usd, "fx_stats": fxs, "infl": infl, "ust": ust}
+           "fx": {"latest": fx[-1] if fx else None, "series": fx}, "fx_usd": fx_usd, "fx_stats": fxs, "infl": infl, "ust": ust, "yield_reach": reach}
     (DATA / "data.json").write_text(json.dumps(out, ensure_ascii=False), encoding="utf-8")
     log("data.json 생성 완료", status)
+    if not os.environ.get("GITHUB_ACTIONS") and not os.environ.get("PF32_NO_NOTIFY"):   # 로컬 실행: 새로 켜진 신호를 macOS 알림으로 (Actions 는 워크플로가 따로 처리)
+        try:
+            r = subprocess.run([sys.executable, "-I", str(ROOT / "notify.py"), "--local"], capture_output=True, text=True, timeout=90)
+            log("알림 점검:", (r.stdout or r.stderr).strip().splitlines()[-1][:200] if (r.stdout or r.stderr).strip() else "출력 없음")
+        except Exception as e: log("알림 점검 실패:", e)
 
 
 if __name__ == "__main__":

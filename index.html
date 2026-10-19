@@ -573,6 +573,29 @@ function stopPf(m) {   // 원화 실질 손절 기준(SR) 대비 PF32 상태: �
   const vals = gs.map(g => real(((1 + m.ytm / 100) * (1 + g / 100) - 1) * 100, kN)), lim = ((1 + sr / 100) * (1 + kN / 100) / (1 + m.ytm / 100) - 1) * 100;
   return {sr, worst: Math.min(...vals), lim, limFx: m.fx * (1 + lim / 100)};
 }
+function consistentBuy(m) {   // 손절 규칙(환율 가정 3종 중 최악의 원화 실질 ≥ SR)을 만족하는 패널별 최소 매수 기준: 금리를 d(%p) 올렸을 때 최악 실질=SR 이 되는 d
+  const sg = buySignals(m), kN = INF().kr, sr = SR(), cs = C.rc3 && C.rc3.length ? C.rc3 : rcDef();
+  const cases = [[0, 0], ...[1, 2].map(i => cs[i]).filter(Boolean).map(c => [c[1], c[2]])];   // [헤알 연 변동, 달러 연 변동]
+  const ann = (y, g) => ((1 + y / 100) * (1 + g / 100) - 1) * 100;
+  const worst = (j, d) => Math.min(...cases.map(([gb, gu]) => { const a = ann(m.ytm + d, gb), b = ann(sg.yU + d, gu); return real(j === 0 ? a : j === 1 ? b : (a + b) / 2, kN); }));
+  const solve = j => { let lo = -15, hi = 30; for (let i = 0; i < 70; i++) { const d = (lo + hi) / 2; worst(j, d) >= sr ? hi = d : lo = d; } return (lo + hi) / 2; };
+  const d = [0, 1, 2].map(solve);
+  return {sg, d, req: [real(m.ytm + d[0], sg.brI), real(sg.yU + d[1], sg.kr.us), (real(m.ytm + d[2], sg.brI) + real(sg.yU + d[2], sg.kr.us)) / 2],
+    line: [sg.pf(m.ytm + d[0]), sg.us(sg.yU + d[1]), null]};
+}
+function buyAlign() {   // 현재 매수 기준이 정합 기준보다 느슨하면 정합 기준(소수 1자리 올림)으로 올림 — 이미 더 엄격하면 유지
+  const cb = consistentBuy(model()); if (!C.buy_real) C.buy_real = [BUY_DEF, BUY_DEF, BUY_DEF];
+  [0, 1, 2].forEach(j => { C.buy_real[j] = Math.max(BR(j), Math.ceil(cb.req[j] * 10) / 10); });
+  try { localStorage.setItem("pf32cfg", JSON.stringify(C)); } catch (e) {}
+  if (LOCAL) fetch("/api/config", {method: "POST", body: JSON.stringify(C)}).catch(() => {});
+  render(true);
+}
+function stopStatus(m) {   // 알림용(tools/signals.js): 패널별 환율 가정 3종 최악 원화 실질과 손절 규칙 미달 여부, 체결 조건·손절 환율 근접
+  const sg = buySignals(m), kN = INF().kr, sr = SR(), cs = C.rc3 && C.rc3.length ? C.rc3 : rcDef();
+  const cases = [[0, 0], ...[1, 2].map(i => cs[i]).filter(Boolean).map(c => [c[1], c[2]])], ann = (y, g) => ((1 + y / 100) * (1 + g / 100) - 1) * 100;
+  const worst = [0, 1, 2].map(j => Math.min(...cases.map(([gb, gu]) => { const a = ann(m.ytm, gb), b = ann(sg.yU, gu); return real(j === 0 ? a : j === 1 ? b : (a + b) / 2, kN); })));
+  return {sr, worst, breach: worst.map(x => x < sr), reached: !!(m.next && m.next.price > 0 && m.price <= m.next.price), fxNear: !!(m.fx && stopFx(m).near)};
+}
 function entryFx() {   // 체결 단계의 날짜(MM/DD)·비중으로 평균 매수 BRL/KRW 추정. 날짜가 없으면 null
   const yr = new Date(D.generated).getFullYear(), S = D.fx.series; let w = 0, a = 0;
   (C.stages || []).filter(x => x.filled && x.pct > 0 && /^\d{1,2}\/\d{1,2}$/.test(x.date || "")).forEach(x => {
@@ -697,11 +720,15 @@ V.overview = m => {
         <label class=noprint style="font-size:11px;white-space:nowrap;float:right">손절 기준 실질(원화) <input type=number step=0.5 min=-10 max=30 value="${sr}" onchange="stopEdit(this)" style="width:62px;text-align:right;padding:2px 4px">%</label>
         ${stopRows.map(r => `<div style="margin-top:4px">${r[1] < sr ? '<b class=neg>⚠ 구간 해당</b>' : '<b class=pos>✔ 기준 충족</b>'} <b>${r[0]}</b> · 최악 가정 <b>${pct(r[1], 1)}</b>(${r[1] < sr ? "미달" : "여유 " + f2(r[1] - sr, 1) + "%p"}) · ${r[2]}</div>`).join("")}
         <small>환율 가정 3종(환율 불변·5년 연평균·헤알 약세) 중 최악 기준 · 원화 실질 = 만기 보유 연율, 한국 물가 ${f2(kN)}% 차감 · 환율 한도는 1년간 연 변동 가정</small></div>`;
+      const cb = consistentBuy(m), cbIdx = uk && days.length > 1 ? (() => { const b0 = {a: pfMap.get(days[0]).p * fxAt(days[0]), b: uMap.get(days[0]).p * ukAt(days[0])}; return 100 * (0.5 * sg.pf(m.ytm + cb.d[2]) * m.fx / b0.a + 0.5 * sg.us(sg.yU + cb.d[2]) * uk.now / b0.b); })() : null;
+      const consTxt = [`${f2(cb.req[0], 1)}% (PU ≤ ${f2(cb.line[0])})`, `${f2(cb.req[1], 1)}% (가격 ≤ ${f2(cb.line[1])})`, `${f2(cb.req[2], 1)}%${cbIdx != null ? " (평가지수 ≤ " + f2(cbIdx) + ")" : ""}`];
+      const loose = [0, 1, 2].map(j => BR(j) < cb.req[j] - 0.05);
       const anyOn = sigRows.some(r => r[1]);
       const sigHtml = `<div class="callout ${anyOn ? "go" : "sum"}"><b>${anyOn ? "🔔" : "⏳"} 매수 지표 — 실질 수익률 기준 가격선</b> <small>(가격이 선 이하 = 실질 YTM ≥ 기준 → ON · 헤알 기준·달러 기준, 환율 위험 미반영)</small>
         ${sigRows.map((r, j) => `<div style="margin-top:5px;display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px">${badge(r[1], r[2])} <span style="flex:1;min-width:230px"><b>${r[0]}</b> · ${r[3]}</span>
-          <label class=noprint style="font-size:11px;white-space:nowrap">기준 실질 <input type=number step=0.5 min=-5 max=30 value="${BR(j)}" data-j="${j}" onchange="buyEdit(this)" style="width:62px;text-align:right;padding:2px 4px">%</label></div>`).join("")}
-        <div class=noprint style="margin-top:6px"><button onclick="buyReset()" style="font-size:11px;padding:2px 8px">기본값(${BUY_DEF}% · 손절 ${STOP_DEF}%)으로</button> <small>입력값은 이 기기에 저장됩니다. 기준을 올리면 가격선이 내려가 매수 조건이 엄격해집니다.</small></div></div>${stopHtml}`;
+          <label class=noprint style="font-size:11px;white-space:nowrap">기준 실질 <input type=number step=0.5 min=-5 max=30 value="${BR(j)}" data-j="${j}" onchange="buyEdit(this)" style="width:62px;text-align:right;padding:2px 4px">%</label>
+          <div style="flex-basis:100%;font-size:11px;padding-left:2px;${loose[j] ? "color:var(--bad);font-weight:700" : "opacity:.75"}">${loose[j] ? "⚠ 손절 규칙과 불일치 — 이 기준에서 매수하면 환율 가정 최악에서 원화 실질이 " + f2(SR(), 1) + "% 미만. " : "✔ 손절 규칙 정합 · "}정합 기준 실질 ≥ ${consTxt[j]}</div></div>`).join("")}
+        <div class=noprint style="margin-top:6px"><button onclick="buyAlign()" style="font-size:11px;padding:2px 8px;font-weight:700">손절 규칙 정합 기준으로 맞춤</button> <button onclick="buyReset()" style="font-size:11px;padding:2px 8px">기본값(${BUY_DEF}% · 손절 ${STOP_DEF}%)으로</button> <small>입력값은 이 기기에 저장됩니다. 기준을 올리면 가격선이 내려가 매수 조건이 엄격해집니다.</small></div></div>${stopHtml}`;
       const kv = (k, v, sub) => `<div class=kvr><span>${k}</span><b class=mono>${v}${sub ? `<small>${sub}</small>` : ""}</b></div>`;
       const ymap = new Map((D.series[C.tracked.label] || []).map(r => [r[0], r[1]]));
       const mixSer = u.ok ? u.series.filter(o => ymap.has(o.d)).map(o => (ymap.get(o.d) + o.y) / 2).slice(-60) : [];
@@ -743,6 +770,26 @@ V.overview = m => {
   </div></section>`;
 };
 
+function reachTxt(bp) {   // 과거 '금리가 N영업일 안에 +bp 이상 오른 비율'(update.py yield_reach). 표에서 bp 이상인 가장 가까운 기준 사용(하한)
+  const R = D.yield_reach; if (!R) return "—"; if (bp <= 0) return "현재가 이하(이미 충족)";
+  const k = R.thr.findIndex(t => t >= bp); if (k < 0) return `+${R.thr.at(-1)}bp 이상은 과거 거의 없음`;
+  return R.hor.map((h, i) => ({21: "1개월", 63: "3개월", 126: "6개월", 252: "12개월"}[h] + " " + R.p[i][k] + "%")).join(" · ");
+}
+function ladderHtml(m) {
+  const cb = consistentBuy(m), sg = cb.sg, S = C.stages.find(x => !x.filled), kN = INF().kr, cs = C.rc3 && C.rc3.length ? C.rc3 : rcDef();
+  const gs = [0, ...[1, 2].map(i => cs[i] ? cs[i][1] : null).filter(v => v != null)], ann = (y, g) => ((1 + y / 100) * (1 + g / 100) - 1) * 100;
+  const yOf = p => ((1000 / p) ** (1 / sg.Tpf) - 1) * 100;
+  let lv = [];
+  if (S && S.price > 0) lv.push({lab: `${S.name} 현 지정가`, p: S.price});
+  lv.push({lab: `매수 기준 ① (실질 ${f2(BR(0), 1)}%)`, p: sg.p1.line}, {lab: "손절 규칙 정합선", p: cb.line[0]});
+  lv = lv.filter(x => x.p <= m.price * 1.01 || (S && x.p === S.price)).sort((a, b) => b.p - a.p).filter((x, k, a) => k === 0 || a[k - 1].p - x.p > 0.5);   // 현재가보다 높은 수준은 매수 단계로 부적절
+  const rows = lv.map(x => { const y = yOf(x.p), bp = (y - m.ytm) * 100, w = Math.min(...gs.map(g => real(ann(y, g), kN)));
+    return `<tr><td style="white-space:normal">${x.lab}</td><td class=r><b>${f2(x.p)}</b></td><td class=r>${pct((x.p / m.price - 1) * 100, 1)}</td><td class=r>${f2(y)}% <small>(${bp >= 0 ? "+" : ""}${f2(bp, 0)}bp)</small></td><td class=r>${pct(real(y, sg.brI), 1)}</td><td class=r>${pct(real(y, kN), 1)} / ${pct(w, 1)}</td><td class=r>${w >= SR() ? '<b class=pos>✔ 충족</b>' : '<b class=neg>⚠ 미달</b>'}</td><td style="white-space:normal;font-size:11px">${reachTxt(bp)}</td></tr>`; }).join("");
+  return `<div style="margin-top:12px"><b>매수 사다리 제안</b> <small>현 지정가 · 매수 기준선 · 손절 규칙 정합선</small>
+    <div class=tbl><table class=mono><thead><tr><th>수준</th><th class=r>PU</th><th class=r>현재 대비</th><th class=r>YTM(변동)</th><th class=r>헤알 실질</th><th class=r>원화 실질<br><small>불변 / 최악</small></th><th class=r>손절 규칙</th><th>과거 도달 빈도<br><small>금리가 N 안에 한 번이라도 그만큼↑</small></th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="note noprint">손절 규칙=환율 가정 최악에서도 원화 실질 ≥ ${f2(SR(), 1)}%. 정합선보다 높은 가격에서 사면 최악 가정에서 규칙 미달입니다. 도달 빈도는 잔존 약 5년 Prefixado의 2016-10 이후 이력(하한 기준)이며 미래를 보장하지 않습니다. 금리 상승기에는 헤알도 약해지는 경향(상관 약 -0.4)이 있어 매수 시점 환율이 더 낮을 수 있습니다.
+      <br><button onclick="ladderApply()" style="font-size:11px;padding:3px 9px;font-weight:700">미체결 단계를 이 사다리로 분할…</button> 확인 후 이 기기 설정에만 반영됩니다.</div></div>`;
+}
 V.stages = m => {
   const total_ = C.stages.reduce((a, s) => a + s.pct, 0);
   const bar = C.stages.map(s => `<div class="${s.filled ? "f" : ""}" style="flex:${s.pct}"><small>${s.name} ${s.pct}%${s.filled ? " • FILLED" : ""}</small><b class=mono>${f2(s.price)}</b><small>${s.date || ""}</small></div>`).join("");
@@ -761,6 +808,7 @@ V.stages = m => {
       <div class="card" style="${sp.worst < sp.sr ? "border:2px solid var(--bad)" : ""}"><small>손절 기준 · 원화 실질</small><b class=mono>${f2(sp.sr, 1)}%</b><div class=note>PF32 최악 환율 가정 <span style="font-weight:700">${pct(sp.worst, 1)}</span> ${sp.worst < sp.sr ? '<span class=neg style="font-weight:700">⚠ 미달</span>' : '<span class=pos style="font-weight:700">✔ 충족</span>'} · 헤알이 연 <span style="font-weight:700">${pct(sp.lim, 1)}</span> 아래(1년 뒤 BRL/KRW ≈ ${f2(sp.limFx, 1)})면 미달${m.fx ? ` · 손절 환율 <span style="font-weight:700">${f2(sf.level, 1)}</span>(${sf.byEntry ? "평균 매수 환율 " + f2(sf.anchor, 1) : "현재 환율"} 기준 · 현재 대비 ${pct((sf.level / m.fx - 1) * 100, 1)})` : ""} · 상세는 01 탭</div></div>
       <div class=card><small>수익 TARGET</small><b class=mono>${C.target_price > 0 ? f2(C.target_price) : "—"}</b><div class=note>${C.target_price > 0 ? "현재가 대비 " + pct(up) : "미설정"}</div></div>
     </div>
+    ${ladderHtml(m)}
     <div class=note>※ 평균 체결가는 설정의 체결가 × 비중으로 직접 계산합니다.</div>
   </div></section>`;
 };
@@ -931,9 +979,10 @@ V.bonds = m => {
 };
 
 V.settings = m => {
-  const st = C.stages.map((s, i) => `<tr><td>${s.name}</td><td><input type=number step=any data-k="stages.${i}.pct" value="${s.pct}"></td><td><input type=number step=any data-k="stages.${i}.price" value="${s.price}"></td><td><input data-k="stages.${i}.date" value="${s.date || ""}"></td><td><input type=checkbox data-k="stages.${i}.filled" ${s.filled ? "checked" : ""}></td></tr>`).join("");
+  const st = C.stages.map((s, i) => `<tr><td>${s.name}</td><td><input type=number step=any data-k="stages.${i}.pct" value="${s.pct}"></td><td><input type=number step=any data-k="stages.${i}.price" value="${s.price}"></td><td><input data-k="stages.${i}.date" value="${s.date || ""}"></td><td><input type=checkbox data-k="stages.${i}.filled" ${s.filled ? "checked" : ""}></td><td><button class=noprint onclick="stageDel(${i})" title="이 단계 삭제" style="padding:2px 7px">✕</button></td></tr>`).join("");
   return `<section><h2>설정 — 분할매수·TARGET (이 기기 브라우저에 저장)</h2><div class=body>
-    <div class=tbl><table><thead><tr><th>단계</th><th>비중%</th><th>지정가/체결가</th><th>날짜</th><th>체결</th></tr></thead><tbody>${st}</tbody></table></div>
+    <div class=tbl><table><thead><tr><th>단계</th><th>비중%</th><th>지정가/체결가</th><th>날짜</th><th>체결</th><th></th></tr></thead><tbody>${st}</tbody></table></div>
+    <p class=noprint style="margin:6px 0"><button onclick="stageAdd()">＋ 단계 추가</button> <small>매수 사다리용으로 단계를 늘릴 수 있습니다. 비중 합이 100%가 되도록 입력하세요.</small></p>
     <div class=kv style="margin:10px 0"><label>익절 TARGET</label><input type=number step=any data-k="target_price" value="${C.target_price}"></div>
     <p><button class=pri onclick="saveCfg()">저장</button> <span id=saved class=note></span></p>
     <p><button onclick="exportCfg()">📋 설정 복사</button> <button onclick="importCfg()">📥 설정 붙여넣기</button> <span class=note>다른 기기(폰)로 옮길 때: 한 기기에서 복사 → 메신저 '나에게 보내기' 등으로 전달 → 다른 기기에서 붙여넣기. 설정은 서버·GitHub에 올라가지 않고 각 기기 브라우저에만 저장됩니다.</span></p>
@@ -957,7 +1006,7 @@ function importCfg() {
   render(); setTimeout(() => { const s = $("#saved"); if (s) s.textContent = "가져옴 ✓"; }, 50);
 }
 
-async function saveCfg() {
+function readCfgInputs() {
   document.querySelectorAll("[data-k]").forEach(el => {
     const path = el.dataset.k.split("."); let o = C;
     path.slice(0, -1).forEach(p => o = o[p]);
@@ -965,6 +1014,23 @@ async function saveCfg() {
     if (typeof v === "number" && isNaN(v)) { o[k] = path[0] === "infl" ? 0 : null; return; }   // 빈 칸: 물가=0(자동), 그 외=미설정
     o[k] = v;
   });
+}
+function persistCfg() { try { localStorage.setItem("pf32cfg", JSON.stringify(C)); } catch (e) {} if (LOCAL) fetch("/api/config", {method: "POST", body: JSON.stringify(C)}).catch(() => {}); render(); }
+const renameStages = () => C.stages.forEach((x, k) => { x.name = "STAGE" + (k + 1); });
+function stageAdd() { readCfgInputs(); C.stages.push({name: "", pct: 0, price: 0, date: "", filled: false}); renameStages(); persistCfg(); }
+function stageDel(i) { readCfgInputs(); if (C.stages.length <= 1 || !confirm(`${C.stages[i].name} 단계를 삭제할까요?`)) return; C.stages.splice(i, 1); renameStages(); persistCfg(); }
+function ladderApply() {   // 첫 미체결 단계를 [현 지정가 · 매수 기준 선 · 손절 규칙 정합선] 으로 분할(비중 균등)
+  const m = model(), cb = consistentBuy(m), i = C.stages.findIndex(x => !x.filled);
+  if (i < 0) { alert("미체결 단계가 없습니다."); return; }
+  const S = C.stages[i], base = S.price > 0 ? S.price : m.price;
+  const ps = [base, cb.sg.p1.line, cb.line[0]].map(x => Math.round(x * 100) / 100).filter(x => x <= base + 0.005).sort((a, b) => b - a).filter((x, k, a) => k === 0 || a[k - 1] - x > 0.5);   // 현 지정가 이하만, 0.5 BRL 이내 중복 제거
+  const n = ps.length, each = Math.floor(S.pct / n), parts = ps.map((p, k) => ({name: "", pct: k === 0 ? S.pct - each * (n - 1) : each, price: p, date: "", filled: false}));
+  if (n < 2) { alert("제안 가격이 현 지정가와 거의 같아 분할할 필요가 없습니다."); return; }
+  if (!confirm(`${S.name}(${S.pct}%, 지정가 ${S.price})를 ${n}단계로 나눕니다:\n` + parts.map(x => `  ${x.pct}% @ ${f2(x.price)}`).join("\n") + "\n\n이 기기 설정에 저장됩니다. 계속할까요?")) return;
+  C.stages.splice(i, 1, ...parts); renameStages(); persistCfg();
+}
+async function saveCfg() {
+  readCfgInputs();
   try { localStorage.setItem("pf32cfg", JSON.stringify(C)); } catch (e) {}
   if (LOCAL) await fetch("/api/config", {method: "POST", body: JSON.stringify(C)}).catch(() => {});
   $("#saved").textContent = "저장됨 ✓"; setTimeout(() => render(), 600);
