@@ -491,9 +491,9 @@ function fxStrip(items, cur, curLab, lo, hi) {
   const rows = items.map((o, i) => { const y = T + RH * i + RH / 2, x0 = sx(0 > lo ? 0 : lo), x1 = sx(o.v), big = i === 0;
     return `<text x="4" y="${y - 1}" font-size="11" font-weight="${big ? 800 : 600}">${o.n}</text><text x="4" y="${y + 10}" font-size="9" opacity=".7">${o.sub || "환율 변동 없음"}</text>
       <rect x="${Math.min(x0, x1)}" y="${y - (big ? 5 : 4)}" width="${Math.max(1, Math.abs(x1 - x0))}" height="${big ? 10 : 8}" rx="2" style="fill:${col(i)}" fill-opacity=".28"/>
-      <circle cx="${x1}" cy="${y}" r="${big ? 7.5 : 6}" style="fill:${col(i)};stroke:var(--paper);stroke-width:2"/>
-      <text x="${x1 + 12}" y="${y + 1}" font-weight="800" font-size="${big ? 13 : 12}" style="fill:${col(i)}">${pct(o.v, 1)}</text>
-      <text x="${x1 + 12}" y="${y + 12}" font-size="9.5" opacity=".85">${o.fx || ""}</text>`; }).join("");
+      ${big ? `<circle cx="${x1}" cy="${y}" r="12" fill="none" style="stroke:var(--ink)" stroke-width="1.6" stroke-dasharray="2 2.5"/>` : ""}<circle cx="${x1}" cy="${y}" r="${big ? 7.5 : 6}" style="fill:${col(i)};stroke:var(--paper);stroke-width:2"/>
+      <text x="${x1 + (big ? 17 : 12)}" y="${y + 1}" font-weight="800" font-size="${big ? 13 : 12}" style="fill:${col(i)}">${pct(o.v, 1)}</text>
+      <text x="${x1 + (big ? 17 : 12)}" y="${y + 12}" font-size="9.5" opacity=".85">${big ? "◎ 현재 환율 " : ""}${o.fx || ""}</text>`; }).join("");
   const cl = cur != null ? `<line x1="${sx(cur)}" x2="${sx(cur)}" y1="${T - 2}" y2="${yb + 2}" stroke="currentColor" stroke-width="1.4" stroke-dasharray="4 3" opacity=".75"/>
       <text x="${Math.min(Math.max(sx(cur), LW + 50), W - 60)}" y="${yb + 24}" text-anchor="middle" font-size="10" font-weight="700">▲ ${curLab} ${pct(cur, 2)}</text>` : "";
   return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="color:var(--ink);font-family:inherit;display:block">${ticks}${rows}${cl}</svg>`;
@@ -588,7 +588,7 @@ V.overview = m => {
       const fxPick = [["환율 불변", 0, 0], ...[1, 2, 4].map(i => cs[i]).filter(Boolean).map(c => [c[0].split("(")[0], c[1], c[2]])];
       const fxCmp = fxPick.map(([n, gb, gu]) => { const a = annR(m.ytm, gb), b = annR(yU, gu); return {n, gb, gu, v: [real(a, kr.kr), real((a + b) / 2, kr.kr), real(b, kr.kr)]}; });
       const sc3 = fxCmp.slice(0, 3), allV = [...sc3.flatMap(o => o.v), realPf, realU, realMix], sLo = Math.floor(Math.min(0, ...allV) - 1), sHi = Math.ceil(Math.max(...allV) + 1);
-      const strip = (j, cur, curLab, subF, fxF) => `<div class=pleg style="margin-top:10px"><b>환율 가정별 원화 실질 수익률</b> — 앞으로 1년 환율 가정(막대 옆 숫자=1년 뒤 환율, 현재 BRL/KRW ${f2(m.fx)} · USD/KRW ${uk ? f2(uk.now, 0) : "—"}), 연율, 한국 물가 ${f2(kr.kr)}% 차감</div>${fxStrip(sc3.map(o => ({n: ["환율 불변", "5년 연평균", "헤알 약세"][sc3.indexOf(o)], v: o.v[j], sub: subF(o), fx: fxF(o)})), cur, curLab, sLo, sHi)}`;
+      const strip = (j, cur, curLab, subF, fxF) => `<div class=pleg style="margin-top:10px"><b>환율 가정별 원화 실질 수익률</b> — 앞으로 1년 환율 가정(◎=현재 환율 유지, 막대 옆 숫자=1년 뒤 환율, 현재 BRL/KRW ${f2(m.fx)} · USD/KRW ${uk ? f2(uk.now, 0) : "—"}), 연율, 한국 물가 ${f2(kr.kr)}% 차감</div>${fxStrip(sc3.map(o => ({n: ["현재 환율(불변)", "5년 연평균", "헤알 약세"][sc3.indexOf(o)], v: o.v[j], sub: subF(o), fx: fxF(o)})), cur, curLab, sLo, sHi)}`;
       const beBrl = ((1 + yU / 100) / (1 + m.ytm / 100) - 1) * 100, dnAvg = D.fx_stats && D.fx_stats.brl ? D.fx_stats.brl.down : null;
       const badge = (on, nw) => `<b style="padding:1px 8px;border:2px solid ${on ? "var(--ok)" : "var(--ink)"};${on ? "background:var(--okbg);color:var(--ok)" : "opacity:.7"}">${on ? "ON" : "OFF"}</b>${nw ? " <b class=neg>🔔 새로 진입</b>" : ""}`;
       const mixNow = mx.i.length ? mx.i.at(-1) : null;
