@@ -169,7 +169,12 @@ const total = (ytmPct, fxFrom, fxTo) => ((1 + ytmPct / 100) * (fxTo / fxFrom) - 
 
 // ---------- 실질수익률 (인플레 제거, 피셔 방정식) ----------
 const real = (nomPct, inflPct) => ((1 + nomPct / 100) / (1 + inflPct / 100) - 1) * 100;
-const INF = () => Object.assign({kr: 2.0, us: 2.5, br_manual: 0, usdkrw_assume: 0}, C.infl || {});
+const INF = () => {   // 한국·미국 물가: 설정값이 0(미입력)이면 자동값(한국 ECOS 기대인플레이션·미국 OECD), 없으면 2.0/2.5
+  const o = Object.assign({kr: 0, us: 0, br_manual: 0, usdkrw_assume: 0}, C.infl || {}), A = (D.infl) || {};
+  const pick = (k, dflt) => +o[k] > 0 ? [+o[k], "설정값"] : A[k] && A[k].v != null ? [A[k].v, A[k].label || "OECD " + A[k].period] : [dflt, "기본값"];
+  const kr = pick("kr", 2.0), us = pick("us", 2.5);
+  return Object.assign(o, {kr: kr[0], us: us[0], kr_src: kr[1], us_src: us[1]});
+};
 
 // ---------- 정치·재정 시나리오 (PF32 고정금리 vs Selic 연동 vs IPCA+) ----------
 // 기본값은 2018·2022 선거, 2024 재정 충격 때의 실제 움직임을 참고한 '가정'이며 예측이 아님. 모두 이 탭에서 직접 수정 가능
@@ -364,10 +369,10 @@ function realPanel(m) {
   const row = (name, nom, pi, note) => { const c = dayChg(m, nom, pi, pv); return `<tr><td>${name}</td><td class=r>${pct(nom, 2)}</td><td class=r>${f2(pi)}%</td><td class=r style="font-weight:700">${pct(real(nom, pi), 2)}</td><td class=r>${c ? c.txt : "—"}</td><td><small>${note}</small></td></tr>`; };
   return `<div class=tbl><table class=mono><thead><tr><th>기준 통화</th><th class=r>명목 YTM</th><th class=r>물가(연)</th><th class=r>실질 수익</th><th class=r>전일 대비</th><th>물가 가정</th></tr></thead><tbody>
     ${row("BRL 헤알", m.ytm, br.v, "IPCA 기대 · " + br.src)}
-    ${row("KRW 원 (환율 불변)", v.krw, inf.kr, "한국 물가 " + f2(inf.kr) + "% (설정값)")}
-    ${v.usd == null ? "" : row("USD 달러 (환율 불변)", v.usd, inf.us, "미국 물가 " + f2(inf.us) + "% (설정값)")}</tbody></table></div>
+    ${row("KRW 원 (환율 불변)", v.krw, inf.kr, "한국 물가 " + f2(inf.kr) + "% (" + inf.kr_src + ")")}
+    ${v.usd == null ? "" : row("USD 달러 (환율 불변)", v.usd, inf.us, "미국 물가 " + f2(inf.us) + "% (" + inf.us_src + ")")}</tbody></table></div>
     <div class=note>실질 = (1+명목) ÷ (1+물가) − 1 · 명목 YTM ${f2(m.ytm)}%는 1년 기준 연율 · 전일 대비는 ${m.before ? brDate(m.before[0]) : "직전"} 대비(물가 기대는 동일 가정). <b>원화 기준 실질 0% 손익분기 BRL/KRW ≈ ${f2(be.krw)}</b> (현재 ${f2(m.fx)}, ${pct((be.krw / m.fx - 1) * 100, 1)})${be.usd ? ` · 달러 기준 ≈ ${f2(be.usd)}` : ""} — 이보다 환율이 내리면 물가를 뺀 구매력이 줄어듭니다.
-    ${v.usdkrwNow ? ` 달러 기준은 USD/KRW ${f2(v.usdkrw)}${INF().usdkrw_assume > 0 ? "(가정)" : "(현재 " + f2(v.usdkrwNow) + " 유지)"}로 계산.` : ""} 한국·미국 물가는 직접 입력하는 가정값입니다(설정 탭).</div>`;
+    ${v.usdkrwNow ? ` 달러 기준은 USD/KRW ${f2(v.usdkrw)}${INF().usdkrw_assume > 0 ? "(가정)" : "(현재 " + f2(v.usdkrwNow) + " 유지)"}로 계산.` : ""} 한국 물가는 한국은행 소비자동향조사 3년 후 기대인플레이션율(ECOS${D.infl && D.infl.kr && D.infl.kr.cpi ? ", 최근 CPI 전년동월비 " + f2(D.infl.kr.cpi.v) + "%(" + D.infl.kr.cpi.period + ")는 참고" : ""}), 미국 물가는 OECD 최근 전년동월비(현재 물가가 유지된다는 단순 가정)이며 모두 자동 갱신됩니다. 설정 탭에서 직접 입력하면 그 값을 씁니다.</div>`;
 }
 
 // ---------- 공용 컴포넌트 ----------
@@ -651,8 +656,8 @@ V.settings = m => {
       <label>STOP 환율</label><input type=number step=any data-k="stop_fx" value="${C.stop_fx}">
       <label>익절 TARGET</label><input type=number step=any data-k="target_price" value="${C.target_price}">
       <label>BRAZ 2034 YTM %</label><input type=number step=any data-k="braz2034_ytm" value="${C.braz2034_ytm}"></div>
-    <div class=kv style="margin:10px 0"><label>한국 물가 %(연)</label><input type=number step=any data-k="infl.kr" value="${INF().kr}">
-      <label>미국 물가 %(연)</label><input type=number step=any data-k="infl.us" value="${INF().us}">
+    <div class=kv style="margin:10px 0"><label>한국 물가 %(0=자동)</label><input type=number step=any data-k="infl.kr" value="${(C.infl && +C.infl.kr) || 0}">
+      <label>미국 물가 %(0=자동)</label><input type=number step=any data-k="infl.us" value="${(C.infl && +C.infl.us) || 0}">
       <label>브라질 IPCA %(0=Focus 자동)</label><input type=number step=any data-k="infl.br_manual" value="${INF().br_manual}">
       <label>USD/KRW 가정(0=현재 유지)</label><input type=number step=any data-k="infl.usdkrw_assume" value="${INF().usdkrw_assume}"></div>
     <div class=tbl><table><thead><tr><th>시나리오</th><th>확률%</th><th>BRL/KRW</th></tr></thead><tbody>${sc}</tbody></table></div>

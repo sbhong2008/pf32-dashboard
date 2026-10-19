@@ -107,6 +107,47 @@ def fx_stats(brl_krw, brl_usd, years=5):
     return out
 
 
+OECD_CPI = "https://sdmx.oecd.org/public/rest/data/OECD.SDD.TPS,DSD_PRICES@DF_PRICES_ALL,1.0/{c}.M.N.CPI.PA._T.N.GY?lastNObservations=13&dimensionAtObservation=AllDimensions"
+
+
+ECOS_URL = "https://ecos.bok.or.kr/api/StatisticSearch/sample/json/kr/1/10/511Y003/M/{a}/{b}/{c}"   # 공개 sample 키(최대 10건) — 개인 키 아님
+
+
+def ecos_expect():
+    """한국은행 소비자동향조사 기대인플레이션율(향후 1·3·5년, 최신월). 월별이라 최근 6개월 범위에서 마지막 값."""
+    t = date.today(); a = (t.replace(day=1) - timedelta(days=160)).strftime("%Y%m"); b = t.strftime("%Y%m")
+    out = {}
+    for key, code in (("y1", "FMB"), ("y3", "FMC"), ("y5", "FMD")):
+        req = urllib.request.Request(ECOS_URL.format(a=a, b=b, c=code), headers=UA)
+        with urllib.request.urlopen(req, timeout=60) as r: j = json.load(r)
+        rows = j.get("StatisticSearch", {}).get("row")
+        if not rows: raise ValueError(f"ECOS {code}: {j.get('RESULT', {}).get('MESSAGE', '데이터 없음')}")
+        last = max(rows, key=lambda x: x["TIME"])
+        out[key] = {"v": float(last["DATA_VALUE"]), "period": f"{last['TIME'][:4]}-{last['TIME'][4:]}"}
+    log("ECOS 기대인플레이션율:", out)
+    return out
+
+
+def update_infl_kus():
+    """한국·미국 소비자물가 전년동월비(OECD SDMX, 키 불필요). 최신월 값 + 최근 13개월 이력. 한 나라가 실패하면 예외."""
+    out = {}
+    for key, c in (("kr", "KOR"), ("us", "USA")):
+        req = urllib.request.Request(OECD_CPI.format(c=c), headers={"User-Agent": "Mozilla/5.0", "Accept": "text/csv"})
+        with urllib.request.urlopen(req, timeout=60) as r:
+            rows = list(csv.DictReader(r.read().decode("utf-8-sig").splitlines()))
+        ser = sorted((x["TIME_PERIOD"], round(float(x["OBS_VALUE"]), 3)) for x in rows if x["OBS_VALUE"])
+        if not ser: raise ValueError(f"OECD CPI {c} 데이터 없음")
+        out[key] = {"v": ser[-1][1], "period": ser[-1][0], "series": ser, "src": "OECD CPI 전년동월비", "label": "OECD " + ser[-1][0]}
+        log(f"{c} 물가(전년동월비) {ser[-1][0]}: {ser[-1][1]}%")
+    try:   # 한국은 향후 기대 물가(3년 후)를 기본값으로, 최근 CPI 는 참고(cpi)
+        e = ecos_expect()
+        out["kr"].update(cpi={"v": out["kr"]["v"], "period": out["kr"]["period"]}, exp=e, v=e["y3"]["v"], period=e["y3"]["period"],
+                         src="ECOS 3년후 기대인플레이션율", label="ECOS 3년후 기대 " + e["y3"]["period"])
+    except Exception as ex:
+        log("ECOS 기대인플레이션 실패(OECD 전년동월비로 대체):", ex)
+    return out
+
+
 def update_infl():
     """브라질 시장 IPCA 기대치(BCB Focus, 연도별 중앙값). 한국·미국 물가는 키 없이 받을 수 있는 소스가 없어 설정값 사용."""
     start = (date.today() - timedelta(days=400)).isoformat()
@@ -242,6 +283,11 @@ def main():
     try: infl = {"br": update_infl()}; status["infl"] = "ok"
     except Exception as e:
         log("IPCA 기대 실패:", e); status["infl"] = f"error: {e}"; infl = prev.get("infl")
+    prev_infl = prev.get("infl") or {}
+    try: infl = dict(infl or {}, **update_infl_kus())
+    except Exception as e:
+        log("한국·미국 물가 실패(이전 값 유지):", e); status["infl_kus"] = f"error: {e}"
+        infl = dict(infl or {}, **{k: prev_infl[k] for k in ("kr", "us") if k in prev_infl})
 
     hist = {}
     try:

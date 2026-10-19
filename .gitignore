@@ -6,3 +6,10 @@ data/update.log
 data/inbox/
 .playwright-mcp/
 .DS_Store
+
+# 비밀값·로컬 산출물
+.env
+.env.*
+*.pem
+*.key
+__pycache__/

@@ -77,8 +77,8 @@
   "downloads_glob": "~/Downloads/rendimento-investir*.csv",
   "history_days": 400,
   "infl": {
-    "kr": 2.0,
-    "us": 2.5,
+    "kr": 0,
+    "us": 0,
     "br_manual": 0,
     "usdkrw_assume": 0
   }
