@@ -120,6 +120,54 @@ let D, C, tab = localStorage.getItem("tab") || "overview";
 const TABS = [["overview","01 최신변동"],["stages","02 분할매수"],["fx","03 환율"],["scen","04 시나리오"],["port","05 헤알·달러·5:5 비교"],["bonds","06 국채 전체"],["settings","설정"]];
 
 const LOCAL = ["127.0.0.1", "localhost"].includes(location.hostname);
+
+// ---------- 접속 코드 (공개 Pages 전용 · 이 Mac 의 로컬 서버(127.0.0.1)는 면제) ----------
+// 정적 사이트라 브라우저 안에서만 확인하는 '가벼운 잠금'이다(서버 인증 아님). 코드는 저장하지 않고 PBKDF2 해시만 둔다. 교체: python3 set_access_code.py
+const ACCESS = {salt: "5a5c65900a7aaf1e22298544b441d574", iter: 310000, hash: "b7533d185fdc5584c8b274d1abc5839697d916d22f595b79d629f4cac4a2ddd8"};
+const normCode = s => s.toUpperCase().replace(/[^A-Z0-9]/g, "");
+async function accessHash(code) {
+  const k = await crypto.subtle.importKey("raw", new TextEncoder().encode(normCode(code)), "PBKDF2", false, ["deriveBits"]);
+  const salt = Uint8Array.from(ACCESS.salt.match(/../g).map(h => parseInt(h, 16)));
+  const b = await crypto.subtle.deriveBits({name: "PBKDF2", hash: "SHA-256", salt, iterations: ACCESS.iter}, k, 256);
+  return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, "0")).join("");
+}
+function authOk() {
+  if (LOCAL) return true;
+  try { const t = JSON.parse(localStorage.getItem("pf32auth") || sessionStorage.getItem("pf32auth") || "null"); return !!t && t.h === ACCESS.hash && t.exp > Date.now(); } catch (e) { return false; }
+}
+function lockOut() { try { localStorage.removeItem("pf32auth"); sessionStorage.removeItem("pf32auth"); } catch (e) {} location.reload(); }
+function lockScreen() {
+  return new Promise(res => {
+    const d = document.createElement("div");
+    d.style.cssText = "position:fixed;inset:0;z-index:99;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:16px";
+    d.innerHTML = `<form style="background:var(--paper);border:2px solid var(--ink);padding:18px 18px 14px;max-width:340px;width:100%" autocomplete="off">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><span class="logo mono" style="background:var(--ink);color:var(--paper);font-weight:900;padding:2px 8px">PF32</span><b>접속 코드</b></div>
+      <input id="acode" type="password" inputmode="text" autocapitalize="characters" spellcheck="false" placeholder="접속 코드 입력" style="font-size:16px;letter-spacing:.12em;padding:8px">
+      <label style="display:flex;gap:6px;align-items:center;margin:8px 0;font-size:12px"><input type="checkbox" id="aremember" checked> 이 기기에서 30일간 기억</label>
+      <button class="pri" id="aok" style="width:100%;padding:9px;font-size:14px">확인</button>
+      <div id="amsg" class="note" style="min-height:18px;color:var(--bad);opacity:1"></div></form>`;
+    document.body.appendChild(d);
+    const $a = id => d.querySelector("#" + id), msg = t => { $a("amsg").textContent = t; };
+    $a("acode").focus();
+    d.querySelector("form").onsubmit = async e => {
+      e.preventDefault();
+      let f = {n: 0, until: 0}; try { f = JSON.parse(localStorage.getItem("pf32fail") || "") || f; } catch (e2) {}
+      if (Date.now() < f.until) { msg(`시도가 너무 많습니다. ${Math.ceil((f.until - Date.now()) / 1000)}초 후 다시 시도하세요.`); return; }
+      $a("aok").disabled = true; msg("확인 중…");
+      let h = ""; try { h = await accessHash($a("acode").value); } catch (e3) { msg("이 브라우저는 보안 컨텍스트(https)가 필요합니다."); $a("aok").disabled = false; return; }
+      $a("aok").disabled = false;
+      if (h === ACCESS.hash) {
+        const rec = JSON.stringify({h, exp: Date.now() + ($a("aremember").checked ? 30 : 1) * 864e5});
+        try { ($a("aremember").checked ? localStorage : sessionStorage).setItem("pf32auth", rec); localStorage.removeItem("pf32fail"); } catch (e4) {}
+        d.remove(); res(true);
+      } else {
+        f.n = (f.n || 0) + 1; if (f.n >= 5) f.until = Date.now() + Math.min(30 * 60, 30 * (f.n - 4)) * 1000;
+        try { localStorage.setItem("pf32fail", JSON.stringify(f)); } catch (e5) {}
+        msg(f.n >= 5 ? "코드가 올바르지 않습니다. 잠시 후 다시 시도하세요." : `코드가 올바르지 않습니다. (${f.n}/5)`); $a("acode").select();
+      }
+    };
+  });
+}
 async function jget(u) { try { const r = await fetch(u + "?" + Date.now()); return r.ok ? await r.json() : null; } catch (e) { return null; } }
 const lsGet = k => { try { return JSON.parse(localStorage.getItem(k) || "null"); } catch (e) { return null; } };
 async function load() {
@@ -915,7 +963,7 @@ function render(keepFocus) {
 })();
 $("#btnCsv").onclick = () => $("#csvFile").click();
 $("#csvFile").onchange = e => e.target.files[0] && uploadCsv(e.target.files[0]);
-if (!LOCAL) $("#btnUpdate").textContent = "⟳ 새로고침";
+if (!LOCAL) { $("#btnUpdate").textContent = "⟳ 새로고침"; const lb = document.createElement("button"); lb.textContent = "🔒 잠금"; lb.title = "이 기기의 접속 코드 기억을 지우고 잠급니다"; lb.onclick = lockOut; $("#btnUpdate").after(lb); }
 $("#btnUpdate").onclick = async () => {
   if (!LOCAL) { await load(); return; }   // 정적 배포: 서버가 매일 data.json 을 갱신, 여기선 다시 읽기만
   const b = $("#btnUpdate"); b.disabled = true; b.textContent = "업데이트 중… (국채 CSV는 수 분 소요)";
@@ -929,7 +977,7 @@ $("#btnUpdate").onclick = async () => {
 };
 
 if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0) navigator.serviceWorker.register('sw.js').catch(() => {});
-load().catch(e => { $("#app").innerHTML = `<section><div class=body>data/data.json 이 없습니다. <b>python3 update.py</b> 를 먼저 실행하거나 '지금 업데이트'를 누르세요.<br><small>${e}</small></div></section>`; });
+(async () => { if (!authOk()) await lockScreen(); await load(); })().catch(e => { $("#app").innerHTML = `<section><div class=body>data/data.json 이 없습니다. <b>python3 update.py</b> 를 먼저 실행하거나 '지금 업데이트'를 누르세요.<br><small>${e}</small></div></section>`; });
 </script>
 </body>
 </html>
