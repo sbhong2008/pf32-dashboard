@@ -427,10 +427,10 @@ function spark(vals, w = 560, h = 90, mark) {
 
 // 가격(PU, 좌축)과 수익률(명목·실질, 우축)을 한 차트에 겹쳐 그림
 let chartSeq = 0; const CH = {};
-function dualChart(pu, nom, rl, w = 560, h = 190, mark, dates, full, pn = "PU") {
+function dualChart(pu, nom, rl, w = 560, h = 190, mark, dates, full, pn = "PU", lines = []) {
   const n = pu.length; if (n < 2) return "<div class=note>데이터 부족</div>";
   const M = 76, sx = i => M + i * (w - 2 * M) / (n - 1);   // 좌우 여백에 시작·끝 값 라벨을 넣는다
-  const pmn = Math.min(...pu), pmx = Math.max(...pu), ymn = Math.min(...rl), ymx = Math.max(...nom);
+  const pmn = Math.min(...pu, ...lines.map(l => l.v)), pmx = Math.max(...pu, ...lines.map(l => l.v)), ymn = Math.min(...rl), ymx = Math.max(...nom);
   const sp = v => h - 16 - (v - pmn) / (pmx - pmn || 1) * (h - 30), sy = v => h - 16 - (v - ymn) / (ymx - ymn || 1) * (h - 30);
   const line = (arr, f, extra) => `<polyline points="${arr.map((v, i) => sx(i).toFixed(1) + "," + f(v).toFixed(1)).join(" ")}" fill="none" ${extra}/>`;
   const mk = mark != null && mark >= pmn && mark <= pmx ? `<line x1="${M}" x2="${w - M}" y1="${sp(mark)}" y2="${sp(mark)}" stroke="currentColor" stroke-dasharray="1 4" opacity=".7"/><text x="${M + 2}" y="${sp(mark) - 3}" font-size="9">지정가 ${f2(mark)}</text>` : "";
@@ -448,6 +448,7 @@ function dualChart(pu, nom, rl, w = 560, h = 190, mark, dates, full, pn = "PU") 
     ${line(rl, sy, 'stroke="currentColor" stroke-width="1.6" stroke-dasharray="5 3"')}
     <g font-size="9" opacity=".55">${[[L, 2, "start", 9, f2(pmx)], [L, 2, "start", h - 2, f2(pmn)], [R, w - 2, "end", 9, f2(ymx) + "%"], [R, w - 2, "end", h - 2, f2(ymn) + "%"]]
       .filter(([ls, , , cy]) => !ls.some(o => Math.abs(o.y + 3 - cy) < 11)).map(([, x, anc, cy, t]) => `<text x="${x}" y="${cy}" text-anchor="${anc}">${t}</text>`).join("")}</g>
+    ${lines.map(l => `<line x1="${M}" x2="${w - M}" y1="${sp(l.v)}" y2="${sp(l.v)}" style="stroke:var(--ok)" stroke-width="1.6" stroke-dasharray="6 3"/><text x="${w - M - 3}" y="${sp(l.v) - 4}" text-anchor="end" font-size="10" font-weight="800" style="fill:var(--ok)">${l.t}</text>`).join("")}
     ${mk}${lab(L, M - 6, "end")}${lab(R, w - M + 6, "start")}${dt}
     <circle cx="${sx(0)}" cy="${sp(pu[0])}" r="2.2" fill="currentColor"/><circle cx="${sx(n - 1)}" cy="${sp(pu[n - 1])}" r="2.6" fill="currentColor"/><circle cx="${sx(n - 1)}" cy="${sy(rl[n - 1])}" r="2.6" fill="none" stroke="currentColor" stroke-width="1.4"/>
     <g id="${id}c" visibility="hidden" pointer-events="none">
@@ -482,6 +483,36 @@ function chartLeave(id) { const g = document.getElementById(id + "c"); if (g) g.
 
 // ---------- 탭 ----------
 const V = {};
+// 환율 가정별 원화 실질 수익률(연율) 막대: 최저~최고 띠 위에 환율 불변(검정·큼)·5년 연평균(초록)·헤알 약세(빨강) 점, 점선=현재 현지통화 실질. 세 패널이 같은 축(lo~hi)을 써서 서로 비교 가능
+function fxStrip(items, cur, curLab, lo, hi) {
+  const W = 560, LW = 128, R = 54, RH = 31, T = 8, H = T + RH * items.length + 34, sx = v => LW + (v - lo) / (hi - lo) * (W - LW - R);
+  const col = i => i === 1 ? "var(--ok)" : i === 2 ? "var(--bad)" : "var(--ink)", yb = T + RH * items.length;
+  let ticks = ""; for (let t = Math.ceil(lo / 2) * 2; t <= hi; t += 2) ticks += `<line x1="${sx(t)}" x2="${sx(t)}" y1="${T}" y2="${yb}" stroke="currentColor" opacity="${t === 0 ? .5 : .12}"/><text x="${sx(t)}" y="${yb + 11}" text-anchor="middle" opacity=".6" font-size="9">${t}%</text>`;
+  const rows = items.map((o, i) => { const y = T + RH * i + RH / 2, x0 = sx(0 > lo ? 0 : lo), x1 = sx(o.v), big = i === 0;
+    return `<text x="4" y="${y - 1}" font-size="11" font-weight="${big ? 800 : 600}">${o.n}</text><text x="4" y="${y + 10}" font-size="9" opacity=".7">${o.sub || "환율 변동 없음"}</text>
+      <rect x="${Math.min(x0, x1)}" y="${y - (big ? 5 : 4)}" width="${Math.max(1, Math.abs(x1 - x0))}" height="${big ? 10 : 8}" rx="2" style="fill:${col(i)}" fill-opacity=".28"/>
+      <circle cx="${x1}" cy="${y}" r="${big ? 7.5 : 6}" style="fill:${col(i)};stroke:var(--paper);stroke-width:2"/>
+      <text x="${x1 + 12}" y="${y + 4}" font-weight="800" font-size="${big ? 13 : 12}" style="fill:${col(i)}">${pct(o.v, 1)}</text>`; }).join("");
+  const cl = cur != null ? `<line x1="${sx(cur)}" x2="${sx(cur)}" y1="${T - 2}" y2="${yb + 2}" stroke="currentColor" stroke-width="1.4" stroke-dasharray="4 3" opacity=".75"/>
+      <text x="${Math.min(Math.max(sx(cur), LW + 50), W - 60)}" y="${yb + 24}" text-anchor="middle" font-size="10" font-weight="700">▲ ${curLab} ${pct(cur, 2)}</text>` : "";
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="color:var(--ink);font-family:inherit;display:block">${ticks}${rows}${cl}</svg>`;
+}
+// ---------- 매수 지표: 패널별 실질 수익률 BUY_REAL% 에 해당하는 가격선. 가격이 선 이하(=실질 YTM ≥ 기준)이면 ON ----------
+const BUY_REAL = 6;
+function buySignals(m) {
+  const brI = inflBR().v, kr = INF(), u = usdEst(m), yU = u.ok ? u.last.y : u.b.ytm, pU = u.ok ? u.last.p : u.b.px;
+  const Tpf = Math.log(1000 / m.price) / Math.log(1 + m.ytm / 100);          // 제로쿠폰(액면 1,000) 내재 잔존연수
+  const y1 = ((1 + BUY_REAL / 100) * (1 + brI / 100) - 1) * 100, y2 = ((1 + BUY_REAL / 100) * (1 + kr.us / 100) - 1) * 100;
+  const pf = y => 1000 / Math.pow(1 + y / 100, Tpf), us = y => u.b.px * (1 - u.b.dur * (y - u.b.ytm) / 100);
+  const realPf = real(m.ytm, brI), realU = real(yU, kr.us), realMix = (realPf + realU) / 2;
+  let lo = -12, hi = 12; for (let i = 0; i < 60; i++) { const d = (lo + hi) / 2; (real(m.ytm + d, brI) + real(yU + d, kr.us)) / 2 > BUY_REAL ? hi = d : lo = d; }   // 평균 실질=기준이 되는 평행 이동(%p)
+  const dMix = (lo + hi) / 2;
+  const prevPf = m.before ? real(m.before[1], brI) : null;
+  return {u, brI, kr, Tpf, pf, us, dMix, yU, pU, realPf, realU, realMix,
+    p1: {line: pf(y1), cur: m.price, real: realPf, on: realPf >= BUY_REAL, prevOn: prevPf == null ? null : prevPf >= BUY_REAL},
+    p2: {line: us(y2), cur: pU, real: realU, on: realU >= BUY_REAL, prevOn: u.ok ? real(u.prev.y, kr.us) >= BUY_REAL : null},
+    p3: {real: realMix, on: realMix >= BUY_REAL, dMix}};
+}
 // ---------- 01 탭 3패널용: 달러채 추정 시세 · USD/KRW · 5:5 합성 ----------
 // 달러채는 수동 입력 시세(USD_ASOF)를 기준으로, 입력일 이후 미 국채 금리 변동만 반영해 추정(가산금리 불변 가정)
 function usdEst(m) {
@@ -544,23 +575,35 @@ V.overview = m => {
       // ③ 5:5 합성: PF32·달러채를 원화로 환산해 50:50 평가지수(시작=100), 평균 명목·실질 YTM
       const pfMap = new Map(hist.map(r => [r[0], {y: r[1], p: r[2], r: real(r[1], inflAt(r[0]))}])), uMap = new Map(u.series ? u.series.map(o => [o.d, o]) : []);
       const days = u.ok ? u.series.map(o => o.d).filter(d => pfMap.has(d) && fxAt(d) && ukAt(d)).slice(-90) : [];
-      const mx = {i: [], n: [], r: [], d: [], f: []};
+      const mx = {i: [], n: [], r: [], d: [], f: []}, sg = buySignals(m); let mixLine = null;
       if (days.length > 1) {
         const b0 = {a: pfMap.get(days[0]).p * fxAt(days[0]), b: uMap.get(days[0]).p * ukAt(days[0])}, idx = (pf, us) => 100 * (0.5 * pf / b0.a + 0.5 * us / b0.b);
         days.forEach(d => { const a = pfMap.get(d), b = uMap.get(d); mx.i.push(idx(a.p * fxAt(d), b.p * ukAt(d))); mx.n.push((a.y + b.y) / 2); mx.r.push((a.r + real(b.y, kr.us)) / 2); mx.d.push(shortD(d)); mx.f.push(brDate(d)); });
+        if (uk) mixLine = idx(sg.pf(m.ytm + sg.p3.dMix) * m.fx, sg.us(sg.yU + sg.p3.dMix) * uk.now);   // 평균 실질이 기준과 같아지는 평가지수
         if (m.useLive && uk) { mx.i.push(idx(m.price * m.fx, u.last.p * uk.now)); mx.n.push((m.ytm + u.last.y) / 2); mx.r.push((realPf + realU) / 2); mx.d.push("LIVE"); mx.f.push(liveFull); }
       }
       // 환율 반영 비교: 현재 YTM 으로 만기까지 보유, 진입 후 연 환율 변동 가정별 원화 실질 수익률 (04-2와 같은 가정·공식, 시나리오 가중 없음)
       const cs = C.rc3 && C.rc3.length ? C.rc3 : rcDef(), annR = (y, g) => ((1 + y / 100) * (1 + g / 100) - 1) * 100;
       const fxPick = [["환율 불변", 0, 0], ...[1, 2, 4].map(i => cs[i]).filter(Boolean).map(c => [c[0].split("(")[0], c[1], c[2]])];
       const fxCmp = fxPick.map(([n, gb, gu]) => { const a = annR(m.ytm, gb), b = annR(yU, gu); return {n, gb, gu, v: [real(a, kr.kr), real((a + b) / 2, kr.kr), real(b, kr.kr)]}; });
+      const sc3 = fxCmp.slice(0, 3), allV = [...sc3.flatMap(o => o.v), realPf, realU, realMix], sLo = Math.floor(Math.min(0, ...allV) - 1), sHi = Math.ceil(Math.max(...allV) + 1);
+      const strip = (j, cur, curLab, subF) => `<div class=pleg style="margin-top:10px"><b>환율 가정별 원화 실질 수익률</b> — 앞으로 1년 환율 가정, 연율, 한국 물가 ${f2(kr.kr)}% 차감</div>${fxStrip(sc3.map(o => ({n: ["환율 불변", "5년 연평균", "헤알 약세"][sc3.indexOf(o)], v: o.v[j], sub: subF(o)})), cur, curLab, sLo, sHi)}`;
       const beBrl = ((1 + yU / 100) / (1 + m.ytm / 100) - 1) * 100, dnAvg = D.fx_stats && D.fx_stats.brl ? D.fx_stats.brl.down : null;
+      const badge = (on, nw) => `<b style="padding:1px 8px;border:2px solid ${on ? "var(--ok)" : "var(--ink)"};${on ? "background:var(--okbg);color:var(--ok)" : "opacity:.7"}">${on ? "ON" : "OFF"}</b>${nw ? " <b class=neg>🔔 새로 진입</b>" : ""}`;
+      const mixNow = mx.i.length ? mx.i.at(-1) : null;
+      const sigRows = [
+        [`① 헤알채 PU`, sg.p1.on, sg.p1.prevOn != null && sg.p1.prevOn !== sg.p1.on, `${f2(sg.p1.cur)} ${sg.p1.on ? "≤" : ">"} <b>${f2(sg.p1.line)}</b> (${sg.p1.on ? "선까지 " + f2((sg.p1.line / sg.p1.cur - 1) * 100, 1) + "% 여유" : "선까지 " + f2((1 - sg.p1.line / sg.p1.cur) * 100, 1) + "% 하락 필요"}) · 실질 ${pct(sg.p1.real, 2)}`],
+        [`② 달러채 가격`, sg.p2.on, sg.p2.prevOn != null && sg.p2.prevOn !== sg.p2.on, `${f2(sg.p2.cur)} ${sg.p2.on ? "≤" : ">"} <b>${f2(sg.p2.line)}</b> (${sg.p2.on ? "선까지 " + f2((sg.p2.line / sg.p2.cur - 1) * 100, 1) + "% 여유" : "선까지 " + f2((1 - sg.p2.line / sg.p2.cur) * 100, 1) + "% 하락 필요"}) · 실질 ${pct(sg.p2.real, 2)}`],
+        [`③ 5:5 평가지수`, sg.p3.on, false, mixLine != null && mixNow != null ? `${f2(mixNow)} ${sg.p3.on ? "≤" : ">"} <b>${f2(mixLine)}</b> (${sg.p3.on ? "선까지 " + f2((mixLine / mixNow - 1) * 100, 1) + "% 여유" : "선까지 " + f2((1 - mixLine / mixNow) * 100, 1) + "% 하락 필요"}) · 평균 실질 ${pct(sg.p3.real, 2)}` : `평균 실질 ${pct(sg.p3.real, 2)}`]];
+      const anyOn = sigRows.some(r => r[1]);
+      const sigHtml = `<div class="callout ${anyOn ? "go" : "sum"}"><b>${anyOn ? "🔔" : "⏳"} 매수 지표 — 실질 수익률 ${BUY_REAL}% 가격선</b> <small>(가격이 선 이하 = 실질 YTM ≥ ${BUY_REAL}% → ON · 헤알 기준·달러 기준, 환율 위험 미반영)</small>
+        ${sigRows.map(r => `<div style="margin-top:4px">${badge(r[1], r[2])} <b>${r[0]}</b> · ${r[3]}</div>`).join("")}</div>`;
       const kv = (k, v, sub) => `<div class=kvr><span>${k}</span><b class=mono>${v}${sub ? `<small>${sub}</small>` : ""}</b></div>`;
       const ymap = new Map((D.series[C.tracked.label] || []).map(r => [r[0], r[1]]));
       const mixSer = u.ok ? u.series.filter(o => ymap.has(o.d)).map(o => (ymap.get(o.d) + o.y) / 2).slice(-60) : [];
       const uStale = typeof usdStale === "function" ? usdStale() : "";
       const dayc = dayChg(m, m.ytm, brI, m.before ? m.before[1] : null);
-      return `${nx ? `<div class="callout ${reached ? "go" : ""}" style="cursor:pointer" onclick="tab='stages';render()">${reached ? "🔔 <b>체결 조건 충족</b>" : "⏳ <b>대기</b>"} — ${m.next.name} 지정가 <b class=mono>${f2(m.next.price)}</b> · 현재 <b class=mono>${f2(m.price)}</b> · ${reached ? "지정가 이하 (02 분할매수에서 확인)" : f2(m.price - m.next.price) + " BRL 남음"}</div>` : ""}
+      return `${sigHtml}${nx ? `<div class="callout ${reached ? "go" : ""}" style="cursor:pointer" onclick="tab='stages';render()">${reached ? "🔔 <b>체결 조건 충족</b>" : "⏳ <b>대기</b>"} — ${m.next.name} 지정가 <b class=mono>${f2(m.next.price)}</b> · 현재 <b class=mono>${f2(m.price)}</b> · ${reached ? "지정가 이하 (02 분할매수에서 확인)" : f2(m.price - m.next.price) + " BRL 남음"}</div>` : ""}
       <div class="callout sum"><b>⚠ 패널의 YTM은 통화가 달라 직접 비교할 수 없습니다</b> — 헤알채 <span class=mono>${f2(m.ytm)}%</span>(BRL)와 달러채 <span class=mono>${f2(yU)}%</span>(USD)는 환율 위험이 빠진 값입니다. 격차 <b class=mono>${f2(m.ytm - yU)}%p</b>는 헤알 약세 위험의 대가로, 달러 환율이 그대로일 때 <b>헤알이 연 <span class=mono>${f2(-beBrl, 1)}%</span> 넘게 약해지면 달러채가 앞섭니다</b>${dnAvg != null ? ` (최근 5년 헤알 약세구간 평균 <span class=mono>${pct(dnAvg, 1)}</span>)` : ""}.
         <div class=tbl style="margin-top:6px"><table class=mono><thead><tr><th>환율 가정 <small>(진입 후 연 변동 헤알/달러)</small></th><th class=r>헤알채 PF32</th><th class=r>5:5</th><th class=r>달러채</th><th>최선</th></tr></thead><tbody>
         ${fxCmp.map(o => { const bi = o.v.indexOf(Math.max(...o.v)); return `<tr><td>${o.n} <small>(${pct(o.gb, 1)} / ${pct(o.gu, 1)})</small></td>${o.v.map((x, j) => `<td class=r${j === bi ? ' style="font-weight:700;background:var(--okbg)"' : ""}>${pct(x, 1)}</td>`).join("")}<td>${["헤알채", "5:5", "달러채"][bi]}</td></tr>`; }).join("")}</tbody></table></div>
@@ -571,22 +614,25 @@ V.overview = m => {
           ${kv("만기수익률 YTM", f2(m.ytm) + "%", dbp(dy) + " " + bLab)}${kv("직전 대비 가격", dp == null ? "—" : (dp >= 0 ? "+" : "") + f2(dp))}
           ${kv("실질 YTM(헤알 기준)", pct(realPf, 2), (dayc ? dayc.txt + " " + bLab + " · 직전 " + pct(real(m.before[1], brI), 2) + " · " : "") + "IPCA 기대 " + f2(brI) + "%")}${kv("BRL/KRW", f2(m.fx), (D.fx.latest ? brDate(D.fx.latest[0]) + " ECB" : "") + (fxChg == null ? "" : " · " + pct(fxChg, 2) + " " + bLab))}
           ${kv("원화 평가 변동", pc1(pfKrw), "가격×환율 · " + bLab)}${kv("연속 하락", down + "일")}</div>
-          <div>${dualChart(tr, nomS, rlS, 560, 190, C.stages.find(s => !s.filled && s.price > 0)?.price, dts, fullD, "PU")}
-            <div class=pleg>실선=PU(좌축) · 회색=명목 YTM(우축) · 점선=<b>실질 YTM</b>(우축, 각 날짜의 Focus IPCA 기대로 계산) · 최근 91영업일 · 점선 가로선=다음 분할매수 지정가</div></div></div></div>
+          <div>${dualChart(tr, nomS, rlS, 560, 190, C.stages.find(s => !s.filled && s.price > 0)?.price, dts, fullD, "PU", [{v: sg.p1.line, t: `실질 ${BUY_REAL}% 선 ${f2(sg.p1.line)}${sg.p1.on ? " ✔ON" : ""}`}])}
+            <div class=pleg>실선=PU(좌축) · 회색=명목 YTM(우축) · 점선=<b>실질 YTM</b>(우축, 각 날짜의 Focus IPCA 기대로 계산) · 최근 91영업일 · 점선 가로선=다음 분할매수 지정가 · <b style="color:var(--ok)">초록 파선=실질 ${BUY_REAL}% 가격선</b>(이 선 이하 = 매수 지표 ON)</div>
+            ${strip(0, realPf, "현지 실질", o => o.gb === 0 ? "" : "BRL " + pct(o.gb, 1) + "/년")}</div></div></div>
         <div class=panel><div class=ph><span>② 달러표시채 · ${u.b.n.replace("Brazil ", "BRAZ ")}</span><small>USD 기준 · 환율 미반영${u.ok ? " · 추정" : ""}</small></div><div class="pb pb2"><div>
           <div class="big mono">${f2(pU)}</div><div class=sub>USD 가격 ${u.ok ? "(추정)" : "(수동 입력)"} · 시세 ${USD_ASOF} 입력${uStale}</div>
           ${kv("만기수익률 YTM", f2(yU) + "%", u.ok ? dbp(dyU) + " " + uLab + " 추정" : "입력값")}${kv("직전 대비 가격", dpU == null ? "—" : (dpU >= 0 ? "+" : "") + f2(dpU))}
           ${kv("실질 YTM(달러 기준)", pct(realU, 2), "미국 물가 " + f2(kr.us) + "%")}${kv("USD/KRW", uk ? f2(uk.now) : "—", ukChg == null ? "" : pct(ukChg, 2) + " " + uLab)}
           ${kv("원화 평가 변동", pc1(uKrw), "가격×환율 · " + uLab)}${kv("미 국채 " + (u.ok ? f2(u.T, 1) + "년" : "") + " 금리", u.ok ? f2(u.last.y - u.sp0) + "%" : "—", u.ok ? "가산금리 " + f2(u.sp0 * 100, 0) + "bp 고정 가정" : "")}</div>
-          <div>${u.ok ? dualChart(chU.p, chU.n, chU.r, 560, 190, null, chU.d, chU.f, "가격") : "<div class=note>미 국채 금리 자료 없음 — 입력 시세 그대로 표시</div>"}
-            <div class=pleg>${u.ok ? `실선=추정 가격(좌축) · 회색=명목 YTM(우축) · 점선=<b>실질 YTM</b>(우축, 미국 물가 ${f2(kr.us)}% 고정) · 최근 91영업일 · ${USD_ASOF} 입력 시세 기준, 미 국채 금리 변동만 반영(가산금리 고정, 입력일 이전은 소급 추정)` : ""}</div></div></div></div>
+          <div>${u.ok ? dualChart(chU.p, chU.n, chU.r, 560, 190, null, chU.d, chU.f, "가격", [{v: sg.p2.line, t: `실질 ${BUY_REAL}% 선 ${f2(sg.p2.line)}${sg.p2.on ? " ✔ON" : ""}`}]) : "<div class=note>미 국채 금리 자료 없음 — 입력 시세 그대로 표시</div>"}
+            <div class=pleg>${u.ok ? `실선=추정 가격(좌축) · 회색=명목 YTM(우축) · 점선=<b>실질 YTM</b>(우축, 미국 물가 ${f2(kr.us)}% 고정) · 최근 91영업일 · ${USD_ASOF} 입력 시세 기준, 미 국채 금리 변동만 반영(가산금리 고정, 입력일 이전은 소급 추정)` : ""}</div>
+            ${strip(2, realU, "현지 실질", o => o.gu === 0 ? "" : "USD " + pct(o.gu, 1) + "/년")}</div></div></div>
         <div class=panel><div class=ph><span>③ 5:5 포트폴리오</span><small>PF32 50% + 달러채 50% · 통화 혼합 평균</small></div><div class="pb pb2"><div>
           <div class="big mono">${f2(mixY)}%</div><div class=sub>평균 YTM = (${f2(m.ytm)}[BRL] + ${f2(yU)}[USD]) ÷ 2 · 환율 미반영 · 재조정·환헤지 없음</div>
           ${kv("평균 YTM 변동", dbp(mixDy), "각 구성의 직전 대비 평균")}${kv("실질 평균 YTM", pct(realMix, 2), "헤알 " + pct(realPf, 2) + " · 달러 " + pct(realU, 2))}
           ${kv("원화 평가 변동", pc1(mixKrw), "50:50 · 구성별 직전 대비")}${kv("구성 YTM", f2(m.ytm) + "% / " + f2(yU) + "%", "PF32 / 달러채")}
           ${kv("YTM 격차", f2(m.ytm - yU) + "%p", "헤알채가 높은 만큼 환위험 부담")}</div>
-          <div>${mx.i.length > 2 ? dualChart(mx.i, mx.n, mx.r, 560, 190, null, mx.d, mx.f, "지수") : "<div class=note>데이터 부족</div>"}
-            <div class=pleg>${mx.i.length > 2 ? "실선=5:5 원화 평가지수(좌축, 시작=100, PF32·달러채를 원화로 환산해 50:50) · 회색=평균 명목 YTM(우축) · 점선=<b>평균 실질 YTM</b>(우축) · 달러채는 추정" : ""}</div></div></div></div>
+          <div>${mx.i.length > 2 ? dualChart(mx.i, mx.n, mx.r, 560, 190, null, mx.d, mx.f, "지수", mixLine != null ? [{v: mixLine, t: `실질 ${BUY_REAL}% 선 ${f2(mixLine)}${sg.p3.on ? " ✔ON" : ""}`}] : []) : "<div class=note>데이터 부족</div>"}
+            <div class=pleg>${mx.i.length > 2 ? "실선=5:5 원화 평가지수(좌축, 시작=100, PF32·달러채를 원화로 환산해 50:50) · 회색=평균 명목 YTM(우축) · 점선=<b>평균 실질 YTM</b>(우축) · 달러채는 추정" : ""}</div>
+            ${strip(1, realMix, "현지 평균 실질", o => o.gb === 0 ? "" : "BRL " + pct(o.gb, 1) + " · USD " + pct(o.gu, 1))}</div></div></div>
       </div>`; })()}
     ${timesPanel(m)}
     <div class=tbl style="margin-top:10px"><table class=mono><thead><tr><th>종목</th><th class=r>직전</th><th class=r>최신</th><th class=r>변동</th></tr></thead><tbody>${rows}</tbody></table></div>
@@ -835,7 +881,8 @@ function staleWarn() {
 
 function render(keepFocus) {
   const sx = scrollX, sy = scrollY;
-  $("#nav").innerHTML = TABS.map(([k, n]) => `<button class="${k === tab ? "on" : ""}" onclick="tab='${k}';localStorage.setItem('tab',tab);render()">${n}</button>`).join("");
+  let bell = ""; try { const sgn = buySignals(model()), c = [sgn.p1.on, sgn.p2.on, sgn.p3.on].filter(Boolean).length; bell = c ? " 🔔" + c : ""; } catch (e) {}
+  $("#nav").innerHTML = TABS.map(([k, n]) => `<button class="${k === tab ? "on" : ""}" onclick="tab='${k}';localStorage.setItem('tab',tab);render()">${n}${k === "overview" ? bell : ""}</button>`).join("");
   const on = $("#nav .on"); if (on && !keepFocus) on.scrollIntoView({inline: "center", block: "nearest"});
   const m = model();
   $("#meta").textContent = `자동갱신 ${kst(D.generated)}${D.live_info ? " · CSV파일 " + D.live_info.mtime.slice(5).replace("T", " ") : ""} · ${C.tracked.label} ${f2(m.price)} / ${f2(m.ytm)}% · BRL/KRW ${f2(m.fx)}` +
