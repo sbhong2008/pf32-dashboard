@@ -1,0 +1,28 @@
+{
+  "updated": "2026-10-20",
+  "note": "공개 파일 — 일정 사실과 중립적인 확인 항목만 담는다. 개인 계획·판정 기준은 config.local.json(cal_plan, cal_zone, cal_watch)에만 둔다.",
+  "events": [
+    {"id": "fr-budget", "date": "2026-10-20", "title": "프랑스 2027 예산안 — 국민의회 첫 표결", "when": "현지 10/20 표결 → 결과는 10/21 아침(KST) 확인", "confirmed": true,
+     "check": ["표결 결과(통과·부결)와 국민연합(RN)의 대응", "프랑스·독일 10년물 금리 차 변화"], "alerts": [{"offset": 0, "label": "당일"}, {"offset": 1, "label": "결과 확인"}],
+     "src": "파이낸셜뉴스 2026-10-19", "note": "상원·최종 표결 일정은 미확인"},
+    {"id": "br-runoff", "date": "2026-10-25", "title": "브라질 대통령 결선", "when": "10/25(일) 현지 투표·개표 → 결과 10/26 아침(KST)", "confirmed": true,
+     "check": ["당선자 확인", "개표 직후 헤알 환율·국채 금리 반응 기록"], "alerts": [{"offset": -3, "label": "D-3"}, {"offset": -1, "label": "D-1"}, {"offset": 0, "label": "당일"}]},
+    {"id": "br-post-close", "date": "2026-10-27", "title": "결선 후 첫 종가 점검", "when": "10/27(화) 아침(KST) — 브라질 10/26 종가 기준", "confirmed": true,
+     "check": ["PF32 금리·헤알/원 기록", "결선 후 체크리스트로 상황 판정"], "alerts": [{"offset": 0, "label": "당일"}]},
+    {"id": "fomc", "date": "2026-10-28", "title": "FOMC 금리 결정", "when": "10/28 14:00(ET) = 10/29 03:00(KST)", "confirmed": true,
+     "check": ["금리 결정과 성명", "미 10년물·달러 반응"], "alerts": [{"offset": -1, "label": "D-1"}, {"offset": 1, "label": "결과 확인"}],
+     "src": "Fed 일정(Reuters 캘린더)"},
+    {"id": "us-midterm", "date": "2026-11-03", "title": "미국 중간선거", "when": "11/3 현지 투표 → 개표 결과 11/4(KST)", "confirmed": true,
+     "check": ["의회 구도(상·하원)", "장기금리·달러 반응 관찰"], "alerts": [{"offset": -1, "label": "D-1"}, {"offset": 1, "label": "결과 확인"}]},
+    {"id": "copom", "date": "2026-11-04", "title": "브라질 Copom(Selic 결정)", "when": "11/3~4 회의 → 결정 11/4 저녁(BRT) = 11/5 아침(KST)", "confirmed": true,
+     "check": ["Selic 결정과 성명", "PF32 금리 반응"], "alerts": [{"offset": -1, "label": "D-1"}, {"offset": 1, "label": "결과 확인"}],
+     "src": "BCB 2026 Copom 일정", "note": "원본 투자 전략 문서의 일정표에는 없던 항목(추가)"},
+    {"id": "br-finmin", "date": null, "window": "2026-11", "title": "브라질 재무장관 지명", "when": "11월 중(일자 미정)", "confirmed": false,
+     "check": ["지명 인물과 재정 기조 발표", "PF32 금리·헤알 반응"], "alerts": [{"date": "2026-11-02", "label": "이달 예정"}]},
+    {"id": "bok", "date": "2026-11-26", "title": "한국은행 금융통화위원회", "when": "11/26 09:00(KST) — 공식 일정 확인 필요", "confirmed": false,
+     "check": ["기준금리 결정", "원화 강세 지속 여부"], "alerts": [{"offset": -1, "label": "D-1"}, {"offset": 0, "label": "당일"}],
+     "src": "단일 출처(트레이더AI) — 한은 공식 목록으로 재확인"},
+    {"id": "weekly-board", "weekly": true, "weekday": 4, "title": "주간 점검판(금요일)", "when": "매주 금요일 아침(KST)", "confirmed": true,
+     "check": ["원/달러", "PF32 금리", "헤알/원", "브렌트유(수동 확인)", "프랑스·독일 10년물 금리 차(수동 확인)", "미 10년물", "미 기대인플레이션"], "alerts": []}
+  ]
+}

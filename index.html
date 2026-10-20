@@ -171,8 +171,9 @@ function lockScreen() {
 async function jget(u) { try { const r = await fetch(u + "?" + Date.now()); return r.ok ? await r.json() : null; } catch (e) { return null; } }
 const lsGet = k => { try { return JSON.parse(localStorage.getItem(k) || "null"); } catch (e) { return null; } };
 async function load() {
-  D = await jget("data/data.json");
+  D = await jget("data/data.json"); const cal = await jget("calendar.json");
   if (!D) throw new Error("data/data.json 없음");
+  D.cal = cal;
   C = await jget("config.json");
   const loc = await jget("config.local.json"); if (loc) C = {...C, ...loc};   // 개인 설정(로컬 서버 전용, git 제외)
   const ls = lsGet("pf32cfg"); if (ls) C = {...C, ...ls};                    // 이 기기 브라우저 설정
@@ -745,7 +746,7 @@ V.overview = m => {
       const mixSer = u.ok ? u.series.filter(o => ymap.has(o.d)).map(o => (ymap.get(o.d) + o.y) / 2).slice(-60) : [];
       const uStale = typeof usdStale === "function" ? usdStale() : "";
       const dayc = dayChg(m, m.ytm, brI, m.before ? m.before[1] : null);
-      return `${sigHtml}${nx ? `<div class="callout ${reached ? "go" : ""}" style="cursor:pointer" onclick="tab='stages';render()">${reached ? "🔔 <b>체결 조건 충족</b>" : "⏳ <b>대기</b>"} — ${m.next.name} 지정가 <b class=mono>${f2(m.next.price)}</b> · 현재 <b class=mono>${f2(m.price)}</b> · ${reached ? "지정가 이하 (02 분할매수에서 확인)" : f2(m.price - m.next.price) + " BRL 남음"}</div>` : ""}
+      return `${sigHtml}${calHtml(m)}${nx ? `<div class="callout ${reached ? "go" : ""}" style="cursor:pointer" onclick="tab='stages';render()">${reached ? "🔔 <b>체결 조건 충족</b>" : "⏳ <b>대기</b>"} — ${m.next.name} 지정가 <b class=mono>${f2(m.next.price)}</b> · 현재 <b class=mono>${f2(m.price)}</b> · ${reached ? "지정가 이하 (02 분할매수에서 확인)" : f2(m.price - m.next.price) + " BRL 남음"}</div>` : ""}
       <div class="callout sum"><b>⚠ 패널의 YTM은 통화가 달라 직접 비교할 수 없습니다</b> — 헤알채 <span class=mono>${f2(m.ytm)}%</span>(BRL)와 달러채 <span class=mono>${f2(yU)}%</span>(USD)는 환율 위험이 빠진 값입니다. 격차 <b class=mono>${f2(m.ytm - yU)}%p</b>는 헤알 약세 위험의 대가로, 달러 환율이 그대로일 때 <b>헤알이 연 <span class=mono>${f2(-beBrl, 1)}%</span> 넘게 약해지면 달러채가 앞섭니다</b>${dnAvg != null ? ` (최근 5년 헤알 약세구간 평균 <span class=mono>${pct(dnAvg, 1)}</span>)` : ""}.
         <div class=tbl style="margin-top:6px"><table class=mono><thead><tr><th>환율 가정 <small>(진입 후 연 변동 헤알/달러)</small></th><th class=r>헤알채 PF32</th><th class=r>5:5</th><th class=r>달러채</th><th>최선</th></tr></thead><tbody>
         ${fxCmp.map(o => { const bi = o.v.indexOf(Math.max(...o.v)); return `<tr><td>${o.n} <small>(${pct(o.gb, 1)} / ${pct(o.gu, 1)})</small></td>${o.v.map((x, j) => `<td class=r${j === bi ? ' style="font-weight:700;background:var(--okbg)"' : ""}>${pct(x, 1)}</td>`).join("")}<td>${["헤알채", "5:5", "달러채"][bi]}</td></tr>`; }).join("")}</tbody></table></div>
@@ -781,6 +782,24 @@ V.overview = m => {
   </div></section>`;
 };
 
+function calHtml(m) {   // 공개 일정(calendar.json) + 이 기기의 개인 계획(cal_plan·cal_zone·cal_watch). 개인 계획이 없으면 일정 사실만 표시
+  const cal = D.cal; if (!cal || !cal.events) return "";
+  const td = new Date(Date.now() + 9 * 36e5).toISOString().slice(0, 10), dd = (a, b) => Math.round((Date.parse(a) - Date.parse(b)) / 864e5);
+  const plan = C.cal_plan || {}, Z = C.cal_zone, W = C.cal_watch;
+  const evs = cal.events.filter(e => !e.weekly && (e.date ? dd(e.date, td) >= -1 && dd(e.date, td) <= 60 : e.window && e.window >= td.slice(0, 7))).sort((a, b) => (a.date || a.window + "-31").localeCompare(b.date || b.window + "-31")).slice(0, 6);
+  const zone = Z && Z.cuts && Z.names ? Z.names[Z.cuts.filter(c => m.ytm >= c).length] : null;
+  const wk = cal.events.find(e => e.weekly), wd = new Date(Date.now() + 9 * 36e5).getUTCDay();
+  const snap = {usd: D.fx_usd && D.fx_usd.latest ? m.fx / D.fx_usd.latest[1] : null, u10: D.ust && D.ust.series ? D.ust.series.at(-1)[4] : null, bei: D.infl && D.infl.us && D.infl.us.bei ? D.infl.us.bei.v : null};
+  const wrows = W ? [["원/달러", snap.usd, W.usdkrw_low != null && snap.usd != null && snap.usd < W.usdkrw_low, "&lt; " + W.usdkrw_low, 1], ["PF32 금리", m.ytm, (W.pf32_lo != null && m.ytm <= W.pf32_lo) || (W.pf32_hi != null && m.ytm >= W.pf32_hi), "≤ " + W.pf32_lo + " / ≥ " + W.pf32_hi, 2],
+    ["헤알/원", m.fx, W.brl_low != null && m.fx < W.brl_low, "&lt; " + W.brl_low, 2], ["브렌트유", null, false, "≥ 120 (수동 확인)", 0], ["프랑스·독일 10년물 금리 차", null, false, "≥ 150bp (수동 확인)", 0],
+    ["미 10년물", snap.u10, W.ust10_hi != null && snap.u10 != null && snap.u10 >= W.ust10_hi, "≥ " + W.ust10_hi, 2], ["미 기대인플레(손익분기)", snap.bei, W.bei_hi != null && snap.bei != null && snap.bei >= W.bei_hi, "≥ " + W.bei_hi, 2]] : null;
+  return `<div class="callout sum"><b>📅 다가오는 일정</b> <small>(오늘 ${td} KST · 알림은 해당일 아침에 자동 발송)</small>
+    ${evs.map(e => { const d = e.date ? dd(e.date, td) : null, tag = d == null ? "미정" : d < 0 ? "지남" : d === 0 ? "오늘" : "D-" + d, p = plan[e.id];
+      return `<div style="margin-top:6px;border-top:1px dotted var(--line);padding-top:5px"><b class=mono style="${d === 0 ? "color:var(--bad)" : ""}">${tag}</b> <b>${e.title}</b> <small>${e.when || ""}${e.confirmed === false ? " · ⚠ 확인 필요" : ""}</small>
+        <div style="font-size:12px;opacity:.85">확인: ${(e.check || []).join(" · ")}</div>${p ? `<div style="font-size:12px"><b>내 계획</b> · ${p}</div>` : ""}${e.id === "br-post-close" && zone ? `<div style="font-size:12px"><b>지금 PF32 ${f2(m.ytm)}% → 현재 구간</b> · ${zone}</div>` : ""}</div>`; }).join("")}
+    ${wrows ? `<details class=fold style="margin-top:8px"><summary>${wd === 5 ? "🔔 오늘은 금요일 — " : ""}주간 점검판 (경계 기준은 이 기기 설정)</summary><div><table class=mono><thead><tr><th>지표</th><th class=r>현재</th><th>경계</th><th>상태</th></tr></thead><tbody>${wrows.map(([n, v, f, rule, dg]) => `<tr><td>${n}</td><td class=r>${v == null ? "—" : f2(v, dg)}</td><td>${rule}</td><td>${v == null ? "수동" : f ? '<b class=neg>⚠ 경계 도달</b>' : "정상"}</td></tr>`).join("")}</tbody></table></div></details>` : ""}
+    <div class="note" style="margin-top:6px">일정은 공개 캘린더(calendar.json)이고 개인 계획·구간 기준은 이 기기 설정에만 있습니다. 확인 필요 표시가 있는 날짜는 공식 일정으로 재확인하세요.</div></div>`;
+}
 function reachTxt(bp) {   // 과거 '금리가 N영업일 안에 +bp 이상 오른 비율'(update.py yield_reach). 표에서 bp 이상인 가장 가까운 기준 사용(하한)
   const R = D.yield_reach; if (!R) return "—"; if (bp <= 0) return "현재가 이하(이미 충족)";
   const k = R.thr.findIndex(t => t >= bp); if (k < 0) return `+${R.thr.at(-1)}bp 이상은 과거 거의 없음`;
@@ -1111,6 +1130,14 @@ const HELP = [
     <li>갱신은 하루 두 번(Mac 07:00·19:00, GitHub 07:30·19:30 KST)이라 장중 급변은 반영되지 않습니다.</li>
     <li>앱에서 기준을 바꿔도 <b>서버 변수는 자동으로 바뀌지 않습니다.</b> 서버 알림 기준을 바꾸려면 저장소 Settings → Variables를 같이 수정합니다.</li>
     <li>폰 GitHub 앱에서 "직접 멘션"과 "할당됨" 알림을 켜 두세요.</li></ul>`},
+  {k: "cal", t: "일정 알림 — 다가오는 일정과 주간 점검판", h: `
+    <p><b>의도</b> — 선거·FOMC·Copom 같은 큰 이벤트는 가격이 움직이기 전에 <b>미리 알고, 결과가 나온 직후 같은 방식으로 점검</b>해야 합니다. 일정마다 알림 시점과 확인 항목, 그 시점의 시장 스냅샷을 함께 보내 판단을 빠르게 합니다.</p>
+    <ul><li><b>앱 01 탭 "다가오는 일정"</b> — 60일 이내 일정(D-day, 확인할 것)과 일정 미정 항목. 이 기기에 개인 계획이 저장돼 있으면 "내 계획"과 결선 후 첫 종가의 <b>현재 구간</b>(PF32 금리 기준 판정)이 함께 나오고, 접이식 <b>주간 점검판</b>(원/달러, PF32 금리, 헤알/원, 미 10년물, 미 기대인플레이션의 경계 도달 여부)도 보입니다. 브렌트유와 프랑스·독일 금리 차는 자동 수집이 없어 "수동 확인"입니다.</li>
+    <li><b>알림 시점</b> — 일정마다 D-3·D-1·당일·결과 확인(하루 뒤) 중 정한 시점의 <b>아침 갱신 직후</b> 발송합니다. 주간 점검판은 매주 금요일입니다. 같은 알림은 한 번만 보내며, 갱신이 하루 빠지면 다음 날 따라잡아 보냅니다.</li>
+    <li><b>GitHub 이슈(폰)</b> — 일정 이름·시각·일반 확인 항목·시장 스냅샷(PF32 금리, 헤알/원, 원/달러, 미 10년물, 미 손익분기 인플레)만 적습니다. <b>개인 계획과 판정 구간은 적지 않습니다.</b></li>
+    <li><b>Mac 알림센터</b> — 같은 내용에 내 계획·현재 구간·점검판 경계 도달 여부를 붙입니다(Mac 설정 파일의 개인 계획 사용).</li>
+    <li><b>일정 파일</b> — 저장소의 calendar.json(공개)입니다. "확인 필요" 표시가 있는 날짜(단일 출처, 미정)는 공식 일정으로 재확인하세요. 개인 계획·구간 기준은 설정(cal_plan, cal_zone, cal_watch)에만 있고 설정 복사로 폰에 옮겨집니다.</li></ul>
+    <p class=note>구간 판정은 "지금 PF32 금리가 어느 구간인가"를 보여 주는 참고 표시입니다. 결선 후 체크리스트의 실제 판정 시점(10/27 종가)과 다를 수 있습니다. 가격 신호(매수선)가 켜져도 이벤트 구간이 "대기"를 가리키면 두 조건을 함께 보고 판단하세요.</p>`},
   {k: "data", t: "데이터 출처와 자동 갱신", h: `
     <ul><li><b>환율</b> BRL/KRW·BRL/USD — Frankfurter(ECB), 10년 시계열. 전 영업일 값까지.</li>
     <li><b>국채</b> — Tesouro Transparente 이력(1~2일 지연)과 Tesouro Direto 가격표 CSV(Investir). 갱신 때 자동 다운로드합니다.</li>
@@ -1163,7 +1190,7 @@ V.help = m => {
     <div class=note>이 설명서는 개념과 읽는 법만 담고 있으며 개인 설정값은 포함하지 않습니다. 앱의 계산 규칙이 바뀌면 이 탭도 함께 갱신됩니다.</div></div></section>`;
 };
 
-const CFG_KEYS = ["stages", "target_real", "extra_fx_rows", "fx_range", "buy_real", "stop_real", "pol", "usd_inc", "rc3"];
+const CFG_KEYS = ["stages", "target_real", "extra_fx_rows", "fx_range", "buy_real", "stop_real", "cal_plan", "cal_zone", "cal_watch", "pol", "usd_inc", "rc3"];
 async function exportCfg() {
   const o = {}; CFG_KEYS.forEach(k => { if (C[k] !== undefined) o[k] = C[k]; });
   const t = JSON.stringify(o);

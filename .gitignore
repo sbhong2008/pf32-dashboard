@@ -17,3 +17,5 @@ __pycache__/
 # 알림 상태(로컬)
 data/signal_state.json
 data/last_alert.md
+data/last_calendar.md
+data/calendar_state.json

@@ -115,8 +115,77 @@ def test():
             assign_owner(url, repo)
             subprocess.run(["gh", "issue", "close", url, "-c", "테스트 완료"], capture_output=True, text=True)
 
+# ---------- 일정 알림: calendar.json(공개 일정) 의 알림 시점이 오면 시장 스냅샷과 함께 발송 ----------
+import datetime
+KST = datetime.timezone(datetime.timedelta(hours=9))
+def today_kst():
+    for a in sys.argv:
+        if a.startswith("--today="): return datetime.date.fromisoformat(a.split("=", 1)[1])
+    return datetime.datetime.now(KST).date()
+
+def due_calendar(cal, today, sent):
+    """오늘(KST)이 알림일이거나 하루 지난 미발송 알림(catch-up 1일) → [(event, alert, key)]. 주간 항목은 해당 요일에 주 1회."""
+    out = []
+    for e in cal.get("events", []):
+        if e.get("weekly"):
+            key = "%s:%d-W%02d" % ((e["id"],) + tuple(today.isocalendar()[:2]))
+            if today.weekday() == e["weekday"] and key not in sent: out.append((e, {"label": "금요일 점검"}, key))
+            continue
+        for a in e.get("alerts", []):
+            d = datetime.date.fromisoformat(a["date"]) if "date" in a else datetime.date.fromisoformat(e["date"]) + datetime.timedelta(days=a["offset"])
+            key = f"{e['id']}:{a.get('date', a.get('offset'))}"
+            if d <= today <= d + datetime.timedelta(days=1) and key not in sent: out.append((e, a, key))
+    return out
+
+def snap_line(sn):
+    f = lambda v, d=2: "—" if v is None else f"{v:.{d}f}"
+    return f"PF32 YTM {f(sn['ytm'])}% (PU {f(sn['price'])}) · 헤알/원 {f(sn['fx'])} · 원/달러 {f(sn['usdkrw'], 1)} · 미 10년물 {f(sn['ust10'])}% · 미 손익분기 인플레 {f(sn['bei'])}%"
+
+def calendar_issue(e, a, sn, owner):
+    when = e.get("when", ""); chk = "\n".join(f"- {c}" for c in e.get("check", []))
+    unc = "" if e.get("confirmed", True) else "\n\n※ 일정이 확정되지 않았거나 단일 출처입니다. 공식 일정으로 재확인하세요."
+    note = f"\n\n참고: {e['note']}" if e.get("note") else ""
+    return (f"📅 PF32 일정 — {e['title']} ({a['label']})",
+            f"@{owner} **{e['title']}** · {when}\n\n**확인할 것**\n{chk}\n\n**시장 스냅샷**(갱신 {sn.get('asof', '')[:16].replace('T', ' ')} UTC)\n{snap_line(sn)}{unc}{note}\n\n개인 계획·판정은 공개 이슈에 적지 않습니다. 앱 01 탭의 '다가오는 일정'에서 확인하세요.")
+
+def calendar_main():
+    path = os.path.join(ROOT, "calendar.json")
+    if not os.path.exists(path): return
+    cal = json.load(open(path, encoding="utf-8")); today = today_kst()
+    sp = os.path.join(ROOT, "data", "cache" if ACTIONS else "", "calendar_state.json")
+    try: sent = set(json.load(open(sp)).get("sent", []))
+    except (OSError, ValueError): sent = set()
+    due = due_calendar(cal, today, sent)
+    print(f"일정 알림: 오늘(KST) {today} · 대상 {len(due)}건", [f"{e['id']}/{a['label']}" for e, a, _ in due] or "")
+    if not due: return
+    cur = signals(); sn = cur["snap"]; local = {}
+    if not ACTIONS:
+        try: local = json.load(open(os.path.join(ROOT, "config.local.json")))
+        except (OSError, ValueError): pass
+    owner = os.environ.get("GITHUB_REPOSITORY", "sbhong2008/pf32-dashboard").split("/")[0]; repo = os.environ.get("GITHUB_REPOSITORY", "sbhong2008/pf32-dashboard")
+    for e, a, key in due:
+        if ACTIONS:
+            title, body = calendar_issue(e, a, sn, owner)
+            if DRY: print("  [이슈]", title, "\n   ", body.replace("\n", "\n    ")[:600]); 
+            else:
+                r = subprocess.run(["gh", "issue", "create", "-R", repo, "--title", title, "--body", body], capture_output=True, text=True)
+                url = r.stdout.strip().splitlines()[-1] if r.stdout.strip() else ""; assign_owner(url, repo); print("  이슈:", url or r.stderr.strip()[:150])
+        else:
+            plan = (local.get("cal_plan") or {}).get(e["id"], ""); zone = cur.get("zone") if e["id"] == "br-post-close" else None
+            wl = [f"{w['n']} {w['v']}{' ⚠' if w['flag'] else ''}" for w in (cur.get("watch") or [])] if e.get("weekly") else []
+            msg = f"{e['title']} ({a['label']}) · {e.get('when', '')}" + (f" ▶ {plan}" if plan else "") + (f" ▶ 현재 구간: {zone}" if zone else "") + (" ▶ " + " · ".join(wl) if wl else f" ▶ {snap_line(sn)}")
+            if not DRY:
+                try: open(os.path.join(ROOT, "data", "last_calendar.md"), "a", encoding="utf-8").write(f"- {today} {msg}\n")
+                except OSError: pass
+            if DRY: print("  [Mac 알림]", msg[:400])
+            else: subprocess.run(["osascript", "-e", 'display notification "' + msg[:240].replace('"', "'").replace("\\", "") + '" with title "PF32 일정" sound name "Glass"'], check=False)
+        sent.add(key)
+    if not DRY:
+        os.makedirs(os.path.dirname(sp), exist_ok=True); json.dump({"sent": sorted(sent)}, open(sp, "w"))
+
 def main():
     if "--test" in sys.argv: return test()
+    if "--calendar-only" in sys.argv: return calendar_main()
     cur = signals()
     prev = None
     try: prev = json.load(open(STATE))
@@ -134,5 +203,10 @@ def main():
         json.dump(st, open(STATE, "w"))
 
 if __name__ == "__main__":
+    rc = 0
     try: main()
-    except Exception as e: print("알림 점검 실패:", e); sys.exit(1)
+    except Exception as e: print("알림 점검 실패:", e); rc = 1
+    if "--test" not in sys.argv and "--calendar-only" not in sys.argv:
+        try: calendar_main()
+        except Exception as e: print("일정 알림 실패:", e); rc = 1
+    sys.exit(rc)
