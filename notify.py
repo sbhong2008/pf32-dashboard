@@ -83,9 +83,13 @@ def assign_owner(url, repo):
     owner = repo.split("/")[0]
     if url: subprocess.run(["gh", "issue", "edit", url, "--add-assignee", owner], capture_output=True, text=True)
 
+def issue_body(owner, sample=False):
+    tag = "[샘플 — 실제 신호가 아닙니다] " if sample else ""
+    return f"@{owner} {tag}PF32 신호가 바뀌었습니다. 앱 01 탭에서 확인하세요. (개인 설정이 공개되지 않도록 어떤 신호인지·가격 등 상세는 이 이슈에 적지 않습니다.)\n\n{FULL_CHECKLIST}"
+
 def notify_actions(ev):
     repo = os.environ.get("GITHUB_REPOSITORY", "sbhong2008/pf32-dashboard"); owner = repo.split("/")[0]
-    body = f"@{owner} PF32 신호가 바뀌었습니다. 앱 01 탭에서 확인하세요. (개인 설정이 공개되지 않도록 어떤 신호인지·가격 등 상세는 이 이슈에 적지 않습니다.)\n\n{FULL_CHECKLIST}"
+    body = issue_body(owner)
     r = subprocess.run(["gh", "issue", "create", "-R", repo, "--title", "🔔 PF32 알림 — 신호 변경", "--body", body], capture_output=True, text=True)
     url = r.stdout.strip().splitlines()[-1] if r.stdout.strip() else ""
     assign_owner(url, repo); return r
@@ -98,11 +102,11 @@ def weekly_due(prev):
 
 def test():
     """알림 경로 시험: macOS 알림 + (--github) 테스트 이슈 생성 후 즉시 닫음(@멘션 알림은 생성 시점에 발송됨)"""
-    ev = [("buy", "알림 테스트 — 실제 신호가 아닙니다"), ("fill", "알림 테스트")]
+    ev = [("buy", "[샘플] ① 헤알채 매수 지표 ON (가격 495.1 ≤ 선 495.4)"), ("fill", "[샘플] 분할매수 지정가 체결 조건 충족 (현재 495.1)")]
     if not ACTIONS and sys.platform == "darwin": notify_local(ev, "PF32 알림 (테스트)"); print("macOS 알림 전송, 상세: data/last_alert.md")
     if "--github" in sys.argv:
         repo = os.environ.get("GITHUB_REPOSITORY", "sbhong2008/pf32-dashboard"); owner = repo.split("/")[0]
-        r = subprocess.run(["gh", "issue", "create", "-R", repo, "--title", "🔔 PF32 알림 테스트", "--body", f"@{owner} 알림 수신 확인용 테스트입니다. 폰에 알림이 왔는지 확인하세요. 바로 닫힙니다." + ("" if ACTIONS else "\n\n※ 본인 계정으로 만든 이슈는 GitHub가 본인에게 알림을 보내지 않습니다. 폰 알림 확인은 Actions(봇)로 보내는 'alert-test' 워크플로로 하세요.")], capture_output=True, text=True)
+        r = subprocess.run(["gh", "issue", "create", "-R", repo, "--title", "🔔 PF32 알림 — 신호 변경 (샘플)", "--body", issue_body(owner, sample=True) + ("" if ACTIONS else "\n\n※ 본인 계정으로 만든 이슈는 GitHub가 본인에게 알림을 보내지 않습니다. 폰 알림 확인은 alert-test 워크플로(봇)로 하세요.")], capture_output=True, text=True)
         url = r.stdout.strip().splitlines()[-1] if r.stdout.strip() else ""
         print("GitHub 테스트 이슈:", url or r.stderr.strip()[:200])
         if url:
