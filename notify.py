@@ -78,10 +78,17 @@ def notify_local(ev, title="PF32 알림"):
     msg = (head + " ▶ " + tips)[:240].replace('"', "'").replace("\\", "")
     subprocess.run(["osascript", "-e", f'display notification "{msg}" with title "{title}" sound name "Glass"'], check=False)
 
+def assign_owner(url, repo):
+    """알림 이슈를 저장소 소유자에게 할당 — '직접 멘션'과 '할당됨' 중 하나만 켜져 있어도 알림이 가도록. 실패해도 무시(이슈는 이미 생성됨)."""
+    owner = repo.split("/")[0]
+    if url: subprocess.run(["gh", "issue", "edit", url, "--add-assignee", owner], capture_output=True, text=True)
+
 def notify_actions(ev):
     repo = os.environ.get("GITHUB_REPOSITORY", "sbhong2008/pf32-dashboard"); owner = repo.split("/")[0]
     body = f"@{owner} PF32 신호가 바뀌었습니다. 앱 01 탭에서 확인하세요. (개인 설정이 공개되지 않도록 어떤 신호인지·가격 등 상세는 이 이슈에 적지 않습니다.)\n\n{FULL_CHECKLIST}"
-    return subprocess.run(["gh", "issue", "create", "-R", repo, "--title", "🔔 PF32 알림 — 신호 변경", "--body", body], capture_output=True, text=True)
+    r = subprocess.run(["gh", "issue", "create", "-R", repo, "--title", "🔔 PF32 알림 — 신호 변경", "--body", body], capture_output=True, text=True)
+    url = r.stdout.strip().splitlines()[-1] if r.stdout.strip() else ""
+    assign_owner(url, repo); return r
 
 def weekly_due(prev):
     """로컬: 새 ISO 주가 시작된 뒤 첫 점검에서 주간 점검 알림 1회(첫 실행 제외)"""
@@ -98,7 +105,9 @@ def test():
         r = subprocess.run(["gh", "issue", "create", "-R", repo, "--title", "🔔 PF32 알림 테스트", "--body", f"@{owner} 알림 수신 확인용 테스트입니다. 폰에 알림이 왔는지 확인하세요. 바로 닫힙니다." + ("" if ACTIONS else "\n\n※ 본인 계정으로 만든 이슈는 GitHub가 본인에게 알림을 보내지 않습니다. 폰 알림 확인은 Actions(봇)로 보내는 'alert-test' 워크플로로 하세요.")], capture_output=True, text=True)
         url = r.stdout.strip().splitlines()[-1] if r.stdout.strip() else ""
         print("GitHub 테스트 이슈:", url or r.stderr.strip()[:200])
-        if url: subprocess.run(["gh", "issue", "close", url, "-c", "테스트 완료"], capture_output=True, text=True)
+        if url:
+            assign_owner(url, repo)
+            subprocess.run(["gh", "issue", "close", url, "-c", "테스트 완료"], capture_output=True, text=True)
 
 def main():
     if "--test" in sys.argv: return test()
