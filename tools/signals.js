@@ -25,7 +25,7 @@ const ip32 = (D.live || []).find(b => b.key === "Tesouro IPCA+|15/08/2032");
 const snap = {ytm: m.ytm, price: m.price, fx: r(m.fx), usdkrw: usd ? r(m.fx / usd) : null, ust10: ust ? ust[4] : null, ust5: ust ? ust[2] : null, bei: us.bei ? us.bei.v : null, ipca32: ip32 ? ip32.rate : null, asof: D.generated};
 let zone = null; const Z = C.cal_zone;   // {cuts:[a,b,c], names:[4개]} — 결선 후 체크리스트 구간(개인 계획, 로컬 전용)
 if (Z && Z.cuts && Z.names) { let k = 0; while (k < Z.cuts.length && m.ytm >= Z.cuts[k]) k++; zone = Z.names[k]; }
-let watch = null; const W = C.cal_watch, MK = C.mk || {};   // 점검판 경계(개인 계획, 로컬 전용)
+let watch = null; const W = C.cal_watch, MK0 = C.mk || {}, AU = D.mkt || {}, auOk = k => AU[k] && (Date.now() - Date.parse(AU[k].t.replace(' ', 'T').replace('Z', ':00Z'))) < 3 * 864e5, MK = {brent: auOk('brent') ? AU.brent.v : MK0.brent, frde: auOk('frde') ? AU.frde.v : MK0.frde};   // 자동값(3일 이내) 우선   // 점검판 경계(개인 계획, 로컬 전용)
 if (W) watch = [["원/달러", snap.usdkrw, W.usdkrw_low != null && snap.usdkrw != null && snap.usdkrw < W.usdkrw_low, `< ${W.usdkrw_low}`], ["PF32 금리", m.ytm, (W.pf32_lo != null && m.ytm <= W.pf32_lo) || (W.pf32_hi != null && m.ytm >= W.pf32_hi), `≤${W.pf32_lo} / ≥${W.pf32_hi}`, true],
   ["헤알/원", snap.fx, W.brl_low != null && snap.fx < W.brl_low, `< ${W.brl_low}`], ["브렌트유", MK.brent != null ? MK.brent : null, W.brent_hi != null && MK.brent != null && MK.brent >= W.brent_hi, `≥ ${W.brent_hi}`],
   ["프·독 금리 차(bp)", MK.frde != null ? MK.frde : null, W.frde_hi != null && MK.frde != null && MK.frde >= W.frde_hi, `≥ ${W.frde_hi}`], ["미 10년물", snap.ust10, W.ust10_hi != null && snap.ust10 != null && snap.ust10 >= W.ust10_hi, `≥ ${W.ust10_hi}`],

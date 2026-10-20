@@ -803,12 +803,13 @@ function calHtml(m) {   // 공개 일정(calendar.json) + 이 기기의 개인 �
   const zone = Z && Z.cuts && Z.names ? Z.names[Z.cuts.filter(c => m.ytm >= c).length] : null;
   const wk = cal.events.find(e => e.weekly), wd = new Date(Date.now() + 9 * 36e5).getUTCDay();
   const snap = {usd: D.fx_usd && D.fx_usd.latest ? m.fx / D.fx_usd.latest[1] : null, u10: D.ust && D.ust.series ? D.ust.series.at(-1)[4] : null, bei: D.infl && D.infl.us && D.infl.us.bei ? D.infl.us.bei.v : null};
-  const MK = C.mk || {}, mkAge = MK.d ? Math.round((Date.parse(td) - Date.parse(MK.d)) / 864e5) : null;
-  const mkIn = (k, ph) => `<input type=number step=any data-k="${k}" value="${MK[k] != null ? MK[k] : ""}" placeholder="${ph}" onchange="mkEdit(this)" style="width:78px;text-align:right;padding:2px 4px" class=noprint>`;
+  const MK0 = C.mk || {}, AU = D.mkt || {}, auOk = k => AU[k] && (Date.now() - Date.parse(AU[k].t.replace(" ", "T").replace("Z", ":00Z"))) < 3 * 864e5;   // 자동값(3일 이내)이 있으면 우선, 없으면 수동값
+  const MK = {brent: auOk("brent") ? AU.brent.v : MK0.brent, frde: auOk("frde") ? AU.frde.v : MK0.frde, d: MK0.d}, mkAge = MK.d ? Math.round((Date.parse(td) - Date.parse(MK.d)) / 864e5) : null;
+  const mkIn = (k, ph) => auOk(k) ? `<span title="${AU[k].src} · ${AU[k].t}">${f2(AU[k].v, k === "frde" ? 1 : 2)} <small style="opacity:.7">자동</small></span>` : `<input type=number step=any data-k="${k}" value="${MK[k] != null ? MK[k] : ""}" placeholder="${ph}" onchange="mkEdit(this)" style="width:78px;text-align:right;padding:2px 4px" class=noprint>`;
   const wrows = W ? [["원/달러", snap.usd, W.usdkrw_low != null && snap.usd != null && snap.usd < W.usdkrw_low, "&lt; " + W.usdkrw_low + " (외화 신규 축소)", 1], ["PF32 금리", m.ytm, (W.pf32_lo != null && m.ytm <= W.pf32_lo) || (W.pf32_hi != null && m.ytm >= W.pf32_hi), "≤ " + W.pf32_lo + " / ≥ " + W.pf32_hi, 2, true],
     ["헤알/원", m.fx, W.brl_low != null && m.fx < W.brl_low, "&lt; " + W.brl_low + " (헤알채 추가 매수 보류)", 2],
-    ["브렌트유($) 수동", MK.brent != null ? MK.brent : null, W.brent_hi != null && MK.brent != null && MK.brent >= W.brent_hi, "≥ " + W.brent_hi + " (위성 자산 매수 중단)", 1, false, mkIn("brent", "달러")],
-    ["프·독 10년물 금리 차(bp) 수동", MK.frde != null ? MK.frde : null, W.frde_hi != null && MK.frde != null && MK.frde >= W.frde_hi, "≥ " + W.frde_hi + " (유럽 재정위기 확산)", 0, false, mkIn("frde", "bp")],
+    ["브렌트유($)" + (auOk("brent") ? "" : " 수동"), MK.brent != null ? MK.brent : null, W.brent_hi != null && MK.brent != null && MK.brent >= W.brent_hi, "≥ " + W.brent_hi + " (위성 자산 매수 중단)", 1, false, mkIn("brent", "달러")],
+    ["프·독 10년물 금리 차(bp)" + (auOk("frde") ? "" : " 수동"), MK.frde != null ? MK.frde : null, W.frde_hi != null && MK.frde != null && MK.frde >= W.frde_hi, "≥ " + W.frde_hi + " (유럽 재정위기 확산)", 0, false, mkIn("frde", "bp")],
     ["미 10년물", snap.u10, W.ust10_hi != null && snap.u10 != null && snap.u10 >= W.ust10_hi, "≥ " + W.ust10_hi + " (달러채 매수 보류)", 2],
     ["미 기대인플레(손익분기)", snap.bei, W.bei_hi != null && snap.bei != null && snap.bei >= W.bei_hi, "≥ " + W.bei_hi + " (시나리오 C)", 2]] : null;
   const hit = wrows ? wrows.filter(r => r[2] && !r[5]) : [];
@@ -817,7 +818,7 @@ function calHtml(m) {   // 공개 일정(calendar.json) + 이 기기의 개인 �
       return `<div style="margin-top:6px;border-top:1px dotted var(--line);padding-top:5px"><b class=mono style="${d === 0 ? "color:var(--bad)" : ""}">${tag}</b> <b>${e.title}</b> <small>${e.when || ""}${e.confirmed === false ? " · ⚠ 확인 필요" : ""}</small>
         <div style="font-size:12px;opacity:.85">확인: ${(e.check || []).join(" · ")}</div>${p ? `<div style="font-size:12px"><b>내 계획</b> · ${p}</div>` : ""}${e.id === "br-post-close" && zone ? `<div style="font-size:12px"><b>지금 PF32 ${f2(m.ytm)}% → 현재 구간</b> · ${zone}</div>` : ""}</div>`; }).join("")}
     ${wrows ? `<details class=fold style="margin-top:8px"><summary>${wd === 5 ? "🔔 오늘은 금요일 — " : ""}주간 점검판 (경계 기준은 이 기기 설정)</summary><div><table class=mono><thead><tr><th>지표</th><th class=r>현재</th><th>경계</th><th>상태</th></tr></thead><tbody>${wrows.map(([n, v, f, rule, dg, , inp]) => `<tr><td>${n}</td><td class=r>${inp ? inp : v == null ? "—" : f2(v, dg)}</td><td>${rule}</td><td>${v == null ? "수동 입력" : f ? '<b class=neg>⚠ 경계 도달</b>' : "정상"}</td></tr>`).join("")}</tbody></table></div></details>` : ""}
-    <div class="note" style="margin-top:6px">${MK.d ? `수동 지표 입력일 ${MK.d}${mkAge > 5 ? ' · <b class=neg>⚠ ' + mkAge + '일 전 값 — 갱신 필요</b>' : ""}` : "브렌트유·프랑스-독일 금리 차는 자동 데이터가 없습니다. 확인한 값을 직접 입력하세요."}</div>
+    <div class="note" style="margin-top:6px">${auOk("brent") || auOk("frde") ? `자동 수집: ${["brent", "frde"].filter(auOk).map(k => (k === "brent" ? "브렌트유" : "프·독") + " " + AU[k].t.replace("Z", " UTC")).join(" · ")} (TradingView 스캐너는 비공식 소스)${auOk("brent") && auOk("frde") ? "" : " — 나머지는 수동 입력"}` : MK.d ? `수동 지표 입력일 ${MK.d}${mkAge > 5 ? ' · <b class=neg>⚠ ' + mkAge + '일 전 값 — 갱신 필요</b>' : ""}` : "브렌트유·프랑스-독일 금리 차 자동 수집이 실패했습니다. 확인한 값을 직접 입력하세요."}</div>
     <div class="note" style="margin-top:6px">일정은 공개 캘린더(calendar.json)이고 개인 계획·구간 기준은 이 기기 설정에만 있습니다. 확인 필요 표시가 있는 날짜는 공식 일정으로 재확인하세요.</div></div>`;
 }
 function reachTxt(bp) {   // 과거 '금리가 N영업일 안에 +bp 이상 오른 비율'(update.py yield_reach). 표에서 bp 이상인 가장 가까운 기준 사용(하한)
@@ -1153,11 +1154,11 @@ const HELP = [
     <li>폰 GitHub 앱에서 "직접 멘션"과 "할당됨" 알림을 켜 두세요.</li></ul>`},
   {k: "cal", t: "일정 알림 — 다가오는 일정과 주간 점검판", h: `
     <p><b>의도</b> — 선거·FOMC·Copom 같은 큰 이벤트는 가격이 움직이기 전에 <b>미리 알고, 결과가 나온 직후 같은 방식으로 점검</b>해야 합니다. 일정마다 알림 시점과 확인 항목, 그 시점의 시장 스냅샷을 함께 보내 판단을 빠르게 합니다.</p>
-    <ul><li><b>앱 01 탭 "다가오는 일정"</b> — 60일 이내 일정(D-day, 확인할 것)과 일정 미정 항목. 이 기기에 개인 계획이 저장돼 있으면 "내 계획"과 결선 후 첫 종가의 <b>현재 구간</b>(PF32 금리 기준 판정)이 함께 나오고, 접이식 <b>주간 점검판</b>(원/달러, PF32 금리, 헤알/원, 미 10년물, 미 기대인플레이션의 경계 도달 여부)도 보입니다. 브렌트유와 프랑스·독일 금리 차는 자동 수집이 없어 "수동 확인"입니다.</li>
+    <ul><li><b>앱 01 탭 "다가오는 일정"</b> — 60일 이내 일정(D-day, 확인할 것)과 일정 미정 항목. 이 기기에 개인 계획이 저장돼 있으면 "내 계획"과 결선 후 첫 종가의 <b>현재 구간</b>(PF32 금리 기준 판정)이 함께 나오고, 접이식 <b>주간 점검판</b>(원/달러, PF32 금리, 헤알/원, 미 10년물, 미 기대인플레이션의 경계 도달 여부)도 보입니다. 브렌트유(Yahoo)와 프랑스·독일 10년물 금리 차(TradingView 스캐너, 비공식)는 아침 갱신 때 자동 수집하고, 실패하거나 3일 넘게 묵으면 수동 입력칸으로 바뀝니다.</li>
     <li><b>알림 시점</b> — 일정마다 D-3·D-1·당일·결과 확인(하루 뒤) 중 정한 시점의 <b>아침 갱신 직후</b> 발송합니다. 주간 점검판은 매주 금요일입니다. 같은 알림은 한 번만 보내며, 갱신이 하루 빠지면 다음 날 따라잡아 보냅니다.</li>
     <li><b>GitHub 이슈(폰)</b> — 일정 이름·시각·일반 확인 항목·시장 스냅샷(PF32 금리, 헤알/원, 원/달러, 미 10년물, 미 손익분기 인플레)만 적습니다. <b>개인 계획과 판정 구간은 적지 않습니다.</b></li>
     <li><b>Mac 알림센터</b> — 같은 내용에 내 계획·현재 구간·점검판 경계 도달 여부를 붙입니다(Mac 설정 파일의 개인 계획 사용).</li>
-    <li><b>중단·보류 기준</b> — 점검판의 원/달러·헤알/원·미 10년물·기대인플레는 자동, <b>브렌트유와 프랑스-독일 10년물 금리 차는 직접 입력</b>(입력일 표시, 5일 넘으면 갱신 경고)합니다. 경계에 닿으면 01 탭 상단에 빨간 박스가 뜨고 Mac 알림이 갑니다(경계값은 이 기기 설정 <code>cal_watch</code>, 입력값은 <code>mk</code>).</li>
+    <li><b>중단·보류 기준</b> — 점검판의 원/달러·헤알/원·미 10년물·기대인플레는 자동, <b>브렌트유와 프랑스-독일 10년물 금리 차는 자동 수집값(3일 이내)을 우선 사용</b>하고, 수집이 실패하면 직접 입력(입력일 표시, 5일 넘으면 갱신 경고)한 값을 씁니다. 경계에 닿으면 01 탭 상단에 빨간 박스가 뜨고 Mac 알림이 갑니다(경계값은 이 기기 설정 <code>cal_watch</code>, 입력값은 <code>mk</code>).</li>
     <li><b>이벤트 구간과 가격 신호</b> — 매수 지표 각 행 아래에 지금 PF32 금리가 속한 이벤트 구간과 그 구간의 행동(개인 계획)이 함께 보입니다. 가격 신호가 ON이어도 구간 기준이 "대기"이면 ⏸ 표시와 알림 문구로 알려 줍니다. 두 조건은 서로 다른 관점이므로 <b>함께 본 뒤</b> 판단하세요.</li>
     <li><b>일정 파일</b> — 저장소의 calendar.json(공개)입니다. "확인 필요" 표시가 있는 날짜(단일 출처, 미정)는 공식 일정으로 재확인하세요. 개인 계획·구간 기준은 설정(cal_plan, cal_zone, cal_watch)에만 있고 설정 복사로 폰에 옮겨집니다.</li></ul>
     <p class=note>구간 판정은 "지금 PF32 금리가 어느 구간인가"를 보여 주는 참고 표시입니다. 결선 후 체크리스트의 실제 판정 시점(10/27 종가)과 다를 수 있습니다. 가격 신호(매수선)가 켜져도 이벤트 구간이 "대기"를 가리키면 두 조건을 함께 보고 판단하세요.</p>`},

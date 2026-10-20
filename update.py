@@ -2,7 +2,7 @@
 """PF32 데이터 업데이터 — 환율(BRL/KRW)·브라질 국채 CSV를 내려받아 data/data.json 생성.
 표준 라이브러리만 사용. 매일 실행해도 안전(ETag/Range 이어받기, 변경 없으면 건너뜀)."""
 import csv, glob, json, os, shutil, subprocess, sys, time, urllib.request, urllib.error
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -208,6 +208,26 @@ def update_ust():
     return {"cols": [3, 5, 7, 10], "series": ser}
 
 
+def update_mkt():
+    """브렌트유(Yahoo BZ=F)·프랑스-독일 10년물 금리 차(TradingView 스캐너, 비공식·키 불필요). 점검판 자동 입력용. 한쪽만 실패해도 나머지는 저장."""
+    out = {}; ua = {"User-Agent": "Mozilla/5.0"}
+    try:
+        req = urllib.request.Request("https://query1.finance.yahoo.com/v8/finance/chart/BZ=F?interval=1d&range=5d", headers=ua)
+        with urllib.request.urlopen(req, timeout=30) as r: m = json.load(r)["chart"]["result"][0]["meta"]
+        out["brent"] = {"v": round(float(m["regularMarketPrice"]), 2), "t": datetime.fromtimestamp(m["regularMarketTime"], timezone.utc).strftime("%Y-%m-%d %H:%MZ"), "src": "Yahoo BZ=F"}
+    except Exception as e: log("브렌트유 자동 수집 실패:", e)
+    try:
+        body = json.dumps({"symbols": {"tickers": ["TVC:FR10Y", "TVC:DE10Y"]}, "columns": ["close"]}).encode()
+        req = urllib.request.Request("https://scanner.tradingview.com/global/scan", data=body, headers=dict(ua, **{"Content-Type": "application/json", "Origin": "https://www.tradingview.com"}))
+        with urllib.request.urlopen(req, timeout=30) as r: d = {x["s"]: x["d"][0] for x in json.load(r)["data"]}
+        fr, de = float(d["TVC:FR10Y"]), float(d["TVC:DE10Y"])
+        out["frde"] = {"v": round((fr - de) * 100, 1), "fr": round(fr, 3), "de": round(de, 3), "t": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%MZ"), "src": "TradingView TVC:FR10Y−DE10Y"}
+    except Exception as e: log("프·독 금리 차 자동 수집 실패:", e)
+    if not out: raise ValueError("시장 지표 자동 수집 모두 실패")
+    log("점검판 자동 지표:", out)
+    return out
+
+
 def update_infl_kus():
     """한국·미국 소비자물가 전년동월비(OECD SDMX, 키 불필요). 최신월 값 + 최근 13개월 이력. 한 나라가 실패하면 예외."""
     out = {}
@@ -372,6 +392,9 @@ def main():
     try: ust = update_ust(); status["ust"] = "ok"
     except Exception as e:
         log("미 국채 금리 이력 실패(이전 값 유지):", e); status["ust"] = f"error: {e}"; ust = prev.get("ust")
+    try: mkt = update_mkt(); status["mkt"] = "ok"
+    except Exception as e:
+        log("점검판 자동 지표 실패(이전 값 유지):", e); status["mkt"] = f"error: {e}"; mkt = prev.get("mkt")
     try: reach = update_yield_reach(); status["reach"] = "ok"
     except Exception as e:
         log("금리 도달 빈도 계산 실패(이전 값 유지):", e); status["reach"] = f"error: {e}"; reach = prev.get("yield_reach")
@@ -415,7 +438,7 @@ def main():
     out = {"generated": datetime.now().astimezone().isoformat(timespec="seconds"), "status": status,
            "live": live, "live_info": live_info, "bonds": sorted(bonds, key=lambda b: (b["tipo"], b["venc"][-4:])),
            "series": series,
-           "fx": {"latest": fx[-1] if fx else None, "series": fx}, "fx_usd": fx_usd, "fx_stats": fxs, "infl": infl, "ust": ust, "yield_reach": reach}
+           "fx": {"latest": fx[-1] if fx else None, "series": fx}, "fx_usd": fx_usd, "fx_stats": fxs, "infl": infl, "ust": ust, "mkt": mkt, "yield_reach": reach}
     (DATA / "data.json").write_text(json.dumps(out, ensure_ascii=False), encoding="utf-8")
     log("data.json 생성 완료", status)
     if not os.environ.get("GITHUB_ACTIONS") and not os.environ.get("PF32_NO_NOTIFY"):   # 로컬 실행: 새로 켜진 신호를 macOS 알림으로 (Actions 는 워크플로가 따로 처리)
