@@ -1,0 +1,15 @@
+name: alert-test
+on:
+  workflow_dispatch:
+permissions:
+  issues: write
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: 알림 시험(봇 계정이 @멘션 이슈를 만들고 바로 닫음 — 폰에 알림이 오는지 확인용)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -I notify.py --test --github --actions

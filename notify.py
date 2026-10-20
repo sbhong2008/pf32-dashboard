@@ -92,10 +92,10 @@ def weekly_due(prev):
 def test():
     """알림 경로 시험: macOS 알림 + (--github) 테스트 이슈 생성 후 즉시 닫음(@멘션 알림은 생성 시점에 발송됨)"""
     ev = [("buy", "알림 테스트 — 실제 신호가 아닙니다"), ("fill", "알림 테스트")]
-    notify_local(ev, "PF32 알림 (테스트)"); print("macOS 알림 전송, 상세: data/last_alert.md")
+    if not ACTIONS and sys.platform == "darwin": notify_local(ev, "PF32 알림 (테스트)"); print("macOS 알림 전송, 상세: data/last_alert.md")
     if "--github" in sys.argv:
         repo = os.environ.get("GITHUB_REPOSITORY", "sbhong2008/pf32-dashboard"); owner = repo.split("/")[0]
-        r = subprocess.run(["gh", "issue", "create", "-R", repo, "--title", "🔔 PF32 알림 테스트", "--body", f"@{owner} 알림 수신 확인용 테스트입니다. 폰에 알림이 왔는지 확인하세요. 바로 닫힙니다."], capture_output=True, text=True)
+        r = subprocess.run(["gh", "issue", "create", "-R", repo, "--title", "🔔 PF32 알림 테스트", "--body", f"@{owner} 알림 수신 확인용 테스트입니다. 폰에 알림이 왔는지 확인하세요. 바로 닫힙니다." + ("" if ACTIONS else "\n\n※ 본인 계정으로 만든 이슈는 GitHub가 본인에게 알림을 보내지 않습니다. 폰 알림 확인은 Actions(봇)로 보내는 'alert-test' 워크플로로 하세요.")], capture_output=True, text=True)
         url = r.stdout.strip().splitlines()[-1] if r.stdout.strip() else ""
         print("GitHub 테스트 이슈:", url or r.stderr.strip()[:200])
         if url: subprocess.run(["gh", "issue", "close", url, "-c", "테스트 완료"], capture_output=True, text=True)
