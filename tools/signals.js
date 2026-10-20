@@ -25,12 +25,15 @@ const ip32 = (D.live || []).find(b => b.key === "Tesouro IPCA+|15/08/2032");
 const snap = {ytm: m.ytm, price: m.price, fx: r(m.fx), usdkrw: usd ? r(m.fx / usd) : null, ust10: ust ? ust[4] : null, ust5: ust ? ust[2] : null, bei: us.bei ? us.bei.v : null, ipca32: ip32 ? ip32.rate : null, asof: D.generated};
 let zone = null; const Z = C.cal_zone;   // {cuts:[a,b,c], names:[4개]} — 결선 후 체크리스트 구간(개인 계획, 로컬 전용)
 if (Z && Z.cuts && Z.names) { let k = 0; while (k < Z.cuts.length && m.ytm >= Z.cuts[k]) k++; zone = Z.names[k]; }
-let watch = null; const W = C.cal_watch;   // 점검판 경계(개인 계획, 로컬 전용)
-if (W) watch = [["원/달러", snap.usdkrw, W.usdkrw_low != null && snap.usdkrw != null && snap.usdkrw < W.usdkrw_low, `< ${W.usdkrw_low}`], ["PF32 금리", m.ytm, (W.pf32_lo != null && m.ytm <= W.pf32_lo) || (W.pf32_hi != null && m.ytm >= W.pf32_hi), `≤${W.pf32_lo} / ≥${W.pf32_hi}`],
-  ["헤알/원", snap.fx, W.brl_low != null && snap.fx < W.brl_low, `< ${W.brl_low}`], ["미 10년물", snap.ust10, W.ust10_hi != null && snap.ust10 != null && snap.ust10 >= W.ust10_hi, `≥ ${W.ust10_hi}`],
-  ["미 기대인플레(손익분기)", snap.bei, W.bei_hi != null && snap.bei != null && snap.bei >= W.bei_hi, `≥ ${W.bei_hi}`]].map(([n, v, f, rule]) => ({n, v, flag: !!f, rule}));
+let watch = null; const W = C.cal_watch, MK = C.mk || {};   // 점검판 경계(개인 계획, 로컬 전용)
+if (W) watch = [["원/달러", snap.usdkrw, W.usdkrw_low != null && snap.usdkrw != null && snap.usdkrw < W.usdkrw_low, `< ${W.usdkrw_low}`], ["PF32 금리", m.ytm, (W.pf32_lo != null && m.ytm <= W.pf32_lo) || (W.pf32_hi != null && m.ytm >= W.pf32_hi), `≤${W.pf32_lo} / ≥${W.pf32_hi}`, true],
+  ["헤알/원", snap.fx, W.brl_low != null && snap.fx < W.brl_low, `< ${W.brl_low}`], ["브렌트유", MK.brent != null ? MK.brent : null, W.brent_hi != null && MK.brent != null && MK.brent >= W.brent_hi, `≥ ${W.brent_hi}`],
+  ["프·독 금리 차(bp)", MK.frde != null ? MK.frde : null, W.frde_hi != null && MK.frde != null && MK.frde >= W.frde_hi, `≥ ${W.frde_hi}`], ["미 10년물", snap.ust10, W.ust10_hi != null && snap.ust10 != null && snap.ust10 >= W.ust10_hi, `≥ ${W.ust10_hi}`],
+  ["미 기대인플레(손익분기)", snap.bei, W.bei_hi != null && snap.bei != null && snap.bei >= W.bei_hi, `≥ ${W.bei_hi}`]].map(([n, v, f, rule, zoneOnly]) => ({n, v, flag: !!f, rule, zoneOnly: !!zoneOnly}));
+const wflag = watch ? watch.filter(w => w.flag && !w.zoneOnly).map(w => w.n) : [];   // 중단·보류 기준 도달 목록
+let zoneWait = [false, false, false]; if (Z && Z.wait) { let k = 0; while (k < Z.cuts.length && m.ytm >= Z.cuts[k]) k++; zoneWait = [0, 1, 2].map(j => (Z.wait[j] || []).includes(k)); }
 console.log(JSON.stringify({
   asof: D.generated, price: m.price, ytm: m.ytm, fx: m.fx,
   buy: [sg.p1.on, sg.p2.on, sg.p3.on], line: [r(sg.p1.line), r(sg.p2.line)], cur: [r(sg.p1.cur), r(sg.p2.cur)],
-  stop: ss.breach, worst: ss.worst.map(r), sr: ss.sr, reached: ss.reached, fxNear: ss.fxNear, target: sg.target.reached, targetLine: r(sg.target.line), align: cb.req.map(r), snap, zone, watch,
+  stop: ss.breach, worst: ss.worst.map(r), sr: ss.sr, reached: ss.reached, fxNear: ss.fxNear, target: sg.target.reached, targetLine: r(sg.target.line), align: cb.req.map(r), snap, zone, watch, wflag, zoneWait,
 }));
