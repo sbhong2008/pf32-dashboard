@@ -16,10 +16,11 @@ const C = {...rd("config.json"), ...(process.env.GITHUB_ACTIONS ? {} : rd("confi
 delete C.stop_price; delete C.stop_fx;
 if (process.env.BUY_REAL) C.buy_real = process.env.BUY_REAL.split(",").map(Number);
 if (process.env.STOP_REAL) C.stop_real = +process.env.STOP_REAL;
+if (process.env.TARGET_REAL) C.target_real = +process.env.TARGET_REAL;
 mod.set(D, C);
 const m = mod.model(), sg = mod.buySignals(m), ss = mod.stopStatus(m), cb = mod.consistentBuy(m), r = x => Math.round(x * 100) / 100;
 console.log(JSON.stringify({
   asof: D.generated, price: m.price, ytm: m.ytm, fx: m.fx,
   buy: [sg.p1.on, sg.p2.on, sg.p3.on], line: [r(sg.p1.line), r(sg.p2.line)], cur: [r(sg.p1.cur), r(sg.p2.cur)],
-  stop: ss.breach, worst: ss.worst.map(r), sr: ss.sr, reached: ss.reached, fxNear: ss.fxNear, align: cb.req.map(r),
+  stop: ss.breach, worst: ss.worst.map(r), sr: ss.sr, reached: ss.reached, fxNear: ss.fxNear, target: sg.target.reached, targetLine: r(sg.target.line), align: cb.req.map(r),
 }));

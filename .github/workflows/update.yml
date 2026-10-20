@@ -27,6 +27,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           BUY_REAL: ${{ vars.BUY_REAL }}
           STOP_REAL: ${{ vars.STOP_REAL }}
+          TARGET_REAL: ${{ vars.TARGET_REAL }}
         run: python3 -I notify.py --actions
       - name: Commit data
         run: |

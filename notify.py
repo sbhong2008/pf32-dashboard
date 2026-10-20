@@ -16,6 +16,7 @@ TIPS = {
     "buy": "매수 직전: 앱 PU는 '매수 쪽 가격'(매도가는 약 0.6% 낮음) → 증권사 호가 확인 · 가격은 하루 두 번 갱신이라 시점 차이 있음 · ②는 달러채 시세가 수동 입력값(갱신 필요)",
     "fill": "체결 조건 충족: 호가 확인 후 매수 · 체결하면 설정 탭에 체결가·날짜·체결 체크 입력 → 폰에 '설정 복사→붙여넣기'",
     "stop": "손절 규칙 점검: 01 탭 손절 지표(최악 가정 원화 실질·한계 환율)와 02 탭 손절 카드 확인 · 기준 4.5%는 환율 가정 최악 기준",
+    "target": "수익 소진 TARGET 도달: 매도 검토 — 매도가는 약 0.6% 낮음 · 세금·환율·보유 시 남은 실질 수익률과 비교 후 판단 · 02 탭 TARGET 카드에서 기준 확인",
     "fx": "손절 환율 근접: 02·03 탭의 손절 환율과 현재 환율 거리 확인 · 체결 입력이 있으면 평균 매수 환율 기준",
 }
 WEEKLY = "주 1회 점검: 달러채 시세 갱신(수동) · 매수 기준·손절 기준·TARGET 재검토 · 큰 이벤트(결선 10/25 등) 전후 04-1 시나리오 확률 확인"
@@ -55,6 +56,7 @@ def events(prev, cur):
             ev.append(("buy", f"{NAMES[i]} 매수 지표 ON{d}"))
         if cur["stop"][i] and not prev["stop"][i]:
             ev.append(("stop", f"{NAMES[i]} 손절 규칙 미달 진입 (최악 가정 원화 실질 {cur['worst'][i]}% < {cur['sr']}%)"))
+    if cur.get("target") and prev.get("target") is False: ev.append(("target", f"수익 소진 TARGET(헤알 실질 기준) 도달 (PU ≥ {cur.get('targetLine')})"))
     if not ACTIONS:   # 체결 조건·손절 환율은 개인 설정(체결가·날짜) 기반이라 로컬에서만 판정
         if cur["reached"] and not prev.get("reached"): ev.append(("fill", f"분할매수 지정가 체결 조건 충족 (현재 {cur['price']})"))
         if cur["fxNear"] and not prev.get("fxNear"): ev.append(("fx", f"BRL/KRW {cur['fx']} 손절 환율에 근접"))
@@ -121,13 +123,13 @@ def main():
     except (OSError, ValueError): pass
     ev = events(prev, cur) if prev else []
     wk, wdue = weekly_due(prev) if not ACTIONS else (None, False)
-    print("신호:", {k: cur[k] for k in ("buy", "stop", "reached", "fxNear")}, "| 이전:", "없음(첫 실행)" if prev is None else "있음", "| 새 이벤트:", [t for _, t in ev] or "없음")
+    print("신호:", {k: cur[k] for k in ("buy", "stop", "reached", "fxNear", "target")}, "| 이전:", "없음(첫 실행)" if prev is None else "있음", "| 새 이벤트:", [t for _, t in ev] or "없음")
     if wdue: print("주간 점검 알림 대상(새 주)")
     if not DRY:
         if ev: (notify_actions if ACTIONS else notify_local)(ev)
         if wdue: subprocess.run(["osascript", "-e", f'display notification "{WEEKLY}" with title "PF32 주간 점검"'], check=False)
         os.makedirs(os.path.dirname(STATE), exist_ok=True)
-        st = {k: cur[k] for k in ("buy", "stop", "reached", "fxNear")}
+        st = {k: cur[k] for k in ("buy", "stop", "reached", "fxNear", "target")}
         if wk: st["week"] = wk
         json.dump(st, open(STATE, "w"))
 
