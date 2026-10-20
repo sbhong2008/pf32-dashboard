@@ -786,6 +786,28 @@ function reachTxt(bp) {   // 과거 '금리가 N영업일 안에 +bp 이상 오�
   const k = R.thr.findIndex(t => t >= bp); if (k < 0) return `+${R.thr.at(-1)}bp 이상은 과거 거의 없음`;
   return R.hor.map((h, i) => ({21: "1개월", 63: "3개월", 126: "6개월", 252: "12개월"}[h] + " " + R.p[i][k] + "%")).join(" · ");
 }
+function maturityHtml(m) {   // 만기 금액 계산: 투자금(04-1·05와 공유 입력)을 매수 수준별로 사서 만기까지 보유할 때 (세전, 이자 없음 = 수익 전부 할인차액)
+  const sg = buySignals(m), cb = consistentBuy(m), sp = stopPf(m), I = USD_INC(), kN = INF().kr, T = sg.Tpf, won0 = I.amt * 1e4, brl0 = won0 / m.fx;
+  const cs = C.rc3 && C.rc3.length ? C.rc3 : rcDef();
+  const fxc = [["환율 불변", 0], ["5년 연평균", cs[1] ? cs[1][1] : null], ["헤알 약세", cs[2] ? cs[2][1] : null], ["한계 환율(손절 규칙)", sp.lim]].filter(x => x[1] != null);
+  let en = [{lab: "현재가", p: m.price}, {lab: `매수 기준선 ① (실질 ${f2(BR(0), 1)}%)`, p: sg.p1.line}, {lab: "손절 규칙 정합선", p: cb.line[0]}];
+  if (m.avgAll > 0 && C.stages.some(x => x.price > 0)) en.push({lab: m.filledPct > 0 ? "남은 단계 체결 시 평균" : "사다리 평균(전 단계 체결 가정)", p: m.avgAll});
+  en = en.filter(x => x.p <= m.price * 1.001).filter((x, i, a) => a.findIndex(y => Math.abs(y.p - x.p) < 0.5) === i);
+  const eok = v => f2(v / 1e8, 3) + "억", cols = en.map(e => { const units = brl0 / e.p, mat = units * 1000; return {...e, units, mat, y: ((1000 / e.p) ** (1 / T) - 1) * 100}; });
+  const th = cols.map(c => `<th class=r>${c.lab}<br><small>PU ${f2(c.p)} · YTM ${f2(c.y)}%</small></th>`).join("");
+  const td = f => cols.map(c => `<td class=r>${f(c)}</td>`).join("");
+  return `<div style="margin-top:14px"><b>만기 금액 계산</b> <small>${C.tracked.venc} 만기까지 보유 · 세전 · 중간 이자 없음(수익 전부 할인차액)</small>
+    <div class=kv style="margin:6px 0"><label>투자금(만원) — 04-1·05와 공유</label><input type=number step=any data-k="amt" value="${I.amt}" onchange="usdEdit(this)"></div>
+    <div class=tbl><table class=mono><thead><tr><th>매수 수준 →</th>${th}</tr></thead><tbody>
+    <tr><td>투자금 → 헤알(환율 ${f2(m.fx)})</td>${td(c => f2(brl0, 0) + " BRL")}</tr>
+    <tr><td>매수 단위 수</td>${td(c => f2(c.units, 1))}</tr>
+    <tr><td><b>만기 수령액(BRL)</b></td>${td(c => "<b>" + f2(c.mat, 0) + "</b>")}</tr>
+    <tr><td>할인차액(= 수익, BRL)</td>${td(c => f2(c.mat - brl0, 0) + " <small>(+" + f2((c.mat / brl0 - 1) * 100, 0) + "%)</small>")}</tr>
+    ${fxc.map(([n, g]) => `<tr><td>${n} <small>(헤알 연 ${pct(g, 1)})</small><br><small>만기 BRL/KRW ≈ ${f2(m.fx * (1 + g / 100) ** T, 0)}</small></td>${td(c => { const w = c.mat * m.fx * (1 + g / 100) ** T; return "<b>" + eok(w) + "</b><br><small>" + pct((w / won0 - 1) * 100, 1) + " · 연 " + pct(((w / won0) ** (1 / T) - 1) * 100, 1) + "</small>"; })}</tr>`).join("")}
+    <tr><td>환율 불변 · 현재 구매력 환산<br><small>한국 물가 ${f2(kN)}% ${f2(T, 1)}년 반영</small></td>${td(c => eok(c.mat * m.fx / (1 + kN / 100) ** T))}</tr>
+    </tbody></table></div>
+    <div class="note">환율 가정은 <b>예측이 아니라 가정</b>입니다(04-2 값과 같음). 세금(브라질·한국)·수수료·환전비용·매도 시 가격 차이는 포함하지 않았습니다. 중도 매도하면 시장가격으로 팔아야 하므로 이 금액과 다릅니다.</div></div>`;
+}
 function ladderHtml(m) {
   const cb = consistentBuy(m), sg = cb.sg, S = C.stages.find(x => !x.filled), kN = INF().kr, cs = C.rc3 && C.rc3.length ? C.rc3 : rcDef();
   const gs = [0, ...[1, 2].map(i => cs[i] ? cs[i][1] : null).filter(v => v != null)], ann = (y, g) => ((1 + y / 100) * (1 + g / 100) - 1) * 100;
@@ -820,6 +842,7 @@ V.stages = m => {
       <div class="card" style="${tg.reached ? "border:2px solid var(--ok)" : ""}"><small>수익 TARGET · 실질 <input class=noprint type=number step=0.5 min=0 max=30 value="${tg.tr}" onchange="targetEdit(this)" style="width:46px;text-align:right;padding:1px 3px;font-size:11px;display:inline-block">%</small><b class=mono>${f2(tg.line)}</b><div class=note>${tg.reached ? '<span class=pos style="font-weight:700">🎯 도달</span> · ' : ""}현재가 대비 <span style="font-weight:700">${pct((tg.line / m.price - 1) * 100)}</span> · ${m.filledPct > 0 && m.avg ? "평균 체결 " + f2(m.avg) + " 대비 " + pct((tg.line / m.avg - 1) * 100) : "전 단계 체결 시 평균 " + f2(m.avgAll) + " 대비 " + pct((tg.line / m.avgAll - 1) * 100)} · 헤알 실질이 ${tg.tr}%로 줄면 정리 검토(PU 선은 시간이 지나면 올라감)</div></div>
     </div>
     ${ladderHtml(m)}
+    ${maturityHtml(m)}
     <div class=note>※ 평균 체결가는 설정의 체결가 × 비중으로 직접 계산합니다.</div>
   </div></section>`;
 };
@@ -1051,7 +1074,8 @@ const HELP = [
     <li><b>전 단계 체결 시 예상 평균(가정)</b> — 아직 체결하지 않은 단계가 모두 <b>지정가에 체결된다고 가정</b>했을 때의 평균입니다. 실제 평균이 아닙니다.</li>
     <li><b>손절 기준 · 원화 실질</b> — 01 손절 지표의 PF32 요약과 손절 환율.</li>
     <li><b>수익 소진 TARGET</b> — 실질 기준 입력칸. 헤알 실질이 이 값으로 줄어드는 PU 선과 현재가·평균 대비 거리.</li>
-    <li><b>매수 사다리 제안</b> — 현 지정가·매수 기준선·손절 규칙 정합선의 PU, 현재 대비, 금리 상승폭, 실질, 손절 규칙 충족 여부, 과거 도달 빈도. 아래 버튼은 첫 미체결 단계를 이 가격들로 균등 분할합니다(확인 창 후 이 기기 설정에만 반영).</li></ul>
+    <li><b>매수 사다리 제안</b> — 현 지정가·매수 기준선·손절 규칙 정합선의 PU, 현재 대비, 금리 상승폭, 실질, 손절 규칙 충족 여부, 과거 도달 빈도. 아래 버튼은 첫 미체결 단계를 이 가격들로 균등 분할합니다(확인 창 후 이 기기 설정에만 반영).</li>
+    <li><b>만기 금액 계산</b> — 입력한 투자금(04-1 이자 계산·05와 공유)을 현재가·매수 기준선·정합선·사다리 평균에서 샀을 때의 <b>만기 수령액(BRL)</b>과 환율 가정별 <b>만기 원화</b>, 연 수익률, 현재 구매력 환산. PF32는 <b>이자가 없고 수익 전부가 할인차액</b>(만기 1,000 − 매수 PU)이라 쿠폰과 구분할 필요가 없습니다. 세전·수수료 미반영.</li></ul>
     <p class=note>체결가·날짜는 <b>설정 탭</b>에서 입력합니다. 체결 체크와 날짜를 입력해야 손절 환율이 평균 매수 환율을 기준으로 계산됩니다.</p>`},
   {k: "t03", t: "03 환율 — BRL/KRW", h: `
     <p><b>의도</b> — 헤알채의 원화 수익은 환율이 좌우합니다. 환율이 어느 수준에서 손익분기가 되는지, 손절 환율은 어디인지 한눈에 봅니다.</p>
