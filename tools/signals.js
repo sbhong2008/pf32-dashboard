@@ -16,6 +16,7 @@ const C = {...rd("config.json"), ...(process.env.GITHUB_ACTIONS ? {} : rd("confi
 delete C.stop_price; delete C.stop_fx;
 if (process.env.BUY_REAL) C.buy_real = process.env.BUY_REAL.split(",").map(Number);
 if (process.env.STOP_REAL) C.stop_real = +process.env.STOP_REAL;
+if (process.env.WATCH_CFG) { try { C.cal_watch = JSON.parse(process.env.WATCH_CFG); } catch (e) {} }   // 점검판 경계(저장소 변수 WATCH_CFG, JSON)
 if (process.env.TARGET_REAL) C.target_real = +process.env.TARGET_REAL;
 mod.set(D, C);
 const m = mod.model(), sg = mod.buySignals(m), ss = mod.stopStatus(m), cb = mod.consistentBuy(m), r = x => Math.round(x * 100) / 100;

@@ -59,9 +59,8 @@ def events(prev, cur):
         if cur["stop"][i] and not prev["stop"][i]:
             ev.append(("stop", f"{NAMES[i]} 손절 규칙 미달 진입 (최악 가정 원화 실질 {cur['worst'][i]}% < {cur['sr']}%)"))
     if cur.get("target") and prev.get("target") is False: ev.append(("target", f"수익 소진 TARGET(헤알 실질 기준) 도달 (PU ≥ {cur.get('targetLine')})"))
-    if not ACTIONS:   # 중단·보류 기준(점검판)은 개인 설정(cal_watch)·수동 지표(mk) 기반이라 로컬에서만 판정
-        for w in cur.get("wflag", []):
-            if w not in prev.get("wflag", []): ev.append(("watch", f"{w} 중단·보류 기준 도달"))
+    for w in cur.get("wflag", []):   # 중단·보류 기준(점검판): 경계는 로컬 config.local.json 또는 저장소 변수 WATCH_CFG
+        if w not in prev.get("wflag", []): ev.append(("watch", f"{w} 중단·보류 기준 도달"))
     if not ACTIONS:   # 체결 조건·손절 환율은 개인 설정(체결가·날짜) 기반이라 로컬에서만 판정
         if cur["reached"] and not prev.get("reached"): ev.append(("fill", f"분할매수 지정가 체결 조건 충족 (현재 {cur['price']})"))
         if cur["fxNear"] and not prev.get("fxNear"): ev.append(("fx", f"BRL/KRW {cur['fx']} 손절 환율에 근접"))
@@ -146,12 +145,23 @@ def snap_line(sn):
     f = lambda v, d=2: "—" if v is None else f"{v:.{d}f}"
     return f"PF32 YTM {f(sn['ytm'])}% (PU {f(sn['price'])}) · 헤알/원 {f(sn['fx'])} · 원/달러 {f(sn['usdkrw'], 1)} · 미 10년물 {f(sn['ust10'])}% · 미 손익분기 인플레 {f(sn['bei'])}%"
 
-def calendar_issue(e, a, sn, owner):
+def weekly_status(cur):
+    """주간 점검 결과 한 줄(공개 이슈용): 지표 이름만, 경계값·현재값은 적지 않는다. 경계 미설정이면 판정 불가로 표시."""
+    w = cur.get("watch")
+    if not w: return "ℹ️ 경계 기준이 설정되지 않아 이상 여부를 판정하지 못했습니다(저장소 변수 WATCH_CFG).", "판정 불가"
+    bad = [x["n"] for x in w if x["flag"] and not x.get("zoneOnly")]
+    miss = [x["n"] for x in w if x["v"] is None]
+    tail = f" (값 없음: {', '.join(miss)})" if miss else ""
+    if bad: return f"⚠️ **이상 징후 {len(bad)}건** — {', '.join(bad)} 경계 도달. 앱 01 탭 점검판에서 확인하세요.{tail}", f"⚠ 이상 징후 {len(bad)}건"
+    return f"✅ **정상** — 점검판 {len(w)}개 지표 모두 경계 이내입니다.{tail}", "✅ 정상"
+
+def calendar_issue(e, a, sn, owner, cur=None):
     when = e.get("when", ""); chk = "\n".join(f"- {c}" for c in e.get("check", []))
     unc = "" if e.get("confirmed", True) else "\n\n※ 일정이 확정되지 않았거나 단일 출처입니다. 공식 일정으로 재확인하세요."
     note = f"\n\n참고: {e['note']}" if e.get("note") else ""
-    return (f"📅 PF32 일정 — {e['title']} ({a['label']})",
-            f"@{owner} **{e['title']}** · {when}\n\n**확인할 것**\n{chk}\n\n**시장 스냅샷**(갱신 {sn.get('asof', '')[:16].replace('T', ' ')} UTC)\n{snap_line(sn)}{unc}{note}\n\n개인 계획·판정은 공개 이슈에 적지 않습니다. 앱 01 탭의 '다가오는 일정'에서 확인하세요.")
+    st, tag = weekly_status(cur) if e.get("weekly") and cur else ("", "")
+    return (f"📅 PF32 일정 — {e['title']} ({a['label']})" + (f" · {tag}" if tag else ""),
+            f"@{owner} **{e['title']}** · {when}\n\n" + (f"**점검 결과**\n{st}\n\n" if st else "") + f"**확인할 것**\n{chk}\n\n**시장 스냅샷**(갱신 {sn.get('asof', '')[:16].replace('T', ' ')} UTC)\n{snap_line(sn)}{unc}{note}\n\n개인 계획·판정은 공개 이슈에 적지 않습니다. 앱 01 탭의 '다가오는 일정'에서 확인하세요.")
 
 def calendar_main():
     path = os.path.join(ROOT, "calendar.json")
@@ -170,7 +180,7 @@ def calendar_main():
     owner = os.environ.get("GITHUB_REPOSITORY", "sbhong2008/pf32-dashboard").split("/")[0]; repo = os.environ.get("GITHUB_REPOSITORY", "sbhong2008/pf32-dashboard")
     for e, a, key in due:
         if ACTIONS:
-            title, body = calendar_issue(e, a, sn, owner)
+            title, body = calendar_issue(e, a, sn, owner, cur)
             if DRY: print("  [이슈]", title, "\n   ", body.replace("\n", "\n    ")[:600]); 
             else:
                 r = subprocess.run(["gh", "issue", "create", "-R", repo, "--title", title, "--body", body], capture_output=True, text=True)
@@ -203,7 +213,7 @@ def main():
         if ev: (notify_actions if ACTIONS else notify_local)(ev)
         if wdue: subprocess.run(["osascript", "-e", f'display notification "{WEEKLY}" with title "PF32 주간 점검"'], check=False)
         os.makedirs(os.path.dirname(STATE), exist_ok=True)
-        st = {k: cur[k] for k in ("buy", "stop", "reached", "fxNear", "target")}
+        st = {k: cur[k] for k in ("buy", "stop", "reached", "fxNear", "target", "wflag")}
         if wk: st["week"] = wk
         json.dump(st, open(STATE, "w"))
 

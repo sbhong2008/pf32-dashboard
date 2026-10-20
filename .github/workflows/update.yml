@@ -28,6 +28,7 @@ jobs:
           BUY_REAL: ${{ vars.BUY_REAL }}
           STOP_REAL: ${{ vars.STOP_REAL }}
           TARGET_REAL: ${{ vars.TARGET_REAL }}
+          WATCH_CFG: ${{ vars.WATCH_CFG }}
         run: python3 -I notify.py --actions
       - name: Commit data
         run: |
