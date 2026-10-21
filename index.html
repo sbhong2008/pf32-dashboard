@@ -430,7 +430,7 @@ function polSection(m) {
       return `<h3 style="margin:14px 0 4px;font-size:14px">채권가격·만기 수익률 예측 (PF32, 결과 확인 직후 기준)</h3>
       <div class=tbl><table class=mono><thead><tr><th>시나리오</th><th class=r>직후 금리 변동</th><th class=r>직후 가격 변동</th><th class=r>예상 PU</th><th class=r>진입 YTM<br><small>명목</small></th><th class=r>실질 만기수익률 ${RT.r}<br><small>IPCA ${f2(br, 1)}%</small></th><th class=r>실질 ${RT.r}<br><small>IPCA +1%p</small></th><th class=r>IPCA+ 진입 실질금리</th>${[-3, 0, 3].map(g => `<th class=r>원화 실질 만기수익률 ${RT.kr}<br><small>환율 연 ${g > 0 ? "+" : ""}${g}%</small></th>`).join("")}</tr></thead><tbody>
       ${r.rows.map(y => { const dp = -r.Dpf * y.dy / 100 + 0; return `<tr><td style="white-space:normal">${y.name.split(" ")[0]} <small>${f2(y.w * 100, 0)}%</small></td><td class=r>${y.dy > 0 ? "+" : ""}${f2(y.dy, 0)}bp</td><td class=r>${pct(dp, 1)}</td><td class=r>${puTxt(pu * (1 + dp / 100))}</td><td class=r>${f2(y.yin, 2)}%</td><td class=r><b>${pct(real(y.yin, br), 2)}</b></td><td class=r>${pct(real(y.yin, br + 1), 2)}</td><td class=r>${f2(r.ipReal + y.dr / 100, 2)}%</td>${[-3, 0, 3].map(g => `<td class=r>${g === 0 ? "<b>" : ""}${pct(real(((1 + y.yin / 100) * (1 + g / 100) - 1) * 100, kr), 2)}${g === 0 ? "</b>" : ""}</td>`).join("")}</tr>`; }).join("")}</tbody></table></div>
-      <div class=note>가격 변동 = −듀레이션 ${f2(r.Dpf, 1)} × 금리변동(볼록성 무시 → 큰 변동은 오차 있음). 만기까지 보유하면 가격 변동은 만기에 소멸하고 <b>실질 만기수익률</b>(명목 진입 YTM ÷ IPCA 만기 평균 ${f2(br, 1)}%)이 확정 수익입니다. 현재 PU ${puTxt(pu)}.<br><b>원화 실질 만기수익률</b> = (1+진입 YTM)×(1+BRL/KRW 연 변동) − 1 을 한국 물가 ${f2(kr, 1)}%로 차감한 연율(만기 보유 기준). 환율 연 −3%는 헤알이 해마다 3%씩 약해지는 경우입니다.</div>
+      <div class=note>가격 변동 = −듀레이션 ${f2(r.Dpf, 1)} × 금리변동(볼록성 무시 → 큰 변동은 오차 있음). 만기까지 보유하면 가격 변동은 만기에 소멸하고 <b>실질 만기수익률</b>(명목 진입 YTM ÷ IPCA 만기 평균 ${f2(br, 1)}%)이 확정 수익입니다. 현재 PU ${puTxt(pu)}.<br>${RT.kr} <b>만기수익률</b> = (1+진입 YTM)×(1+BRL/KRW 연 변동) − 1 을 한국 물가 ${f2(kr, 1)}%로 차감한 연율(만기 보유 기준). 환율 연 −3%는 헤알이 해마다 3%씩 약해지는 경우입니다.</div>
       <h3 style="margin:14px 0 4px;font-size:14px">민감도 — 진입 후 12개월 금리·환율 변동 (진입 YTM 기준)</h3>
       <p class=noprint style="margin:2px 0 6px">${r.rows.map((y, i) => `<button onclick="polSel=${i};render(true)" ${i === polSel ? 'style="font-weight:700;text-decoration:underline"' : ""}>${y.name.split(" ")[0]}</button>`).join(" ")} <small>${x.name} · 진입 YTM ${f2(x.yin, 2)}%</small></p>
       <div class=tbl><table class=mono><thead><tr><th class=r>진입 후 금리</th><th class=r>12개월 후 YTM ${RT.n}</th><th class=r>가격 변동</th><th class=r>헤알 손익 ${RT.n}</th>${fxs.map(f => `<th class=r>원화 손익 ${RT.kn}<br><small>환율 ${f > 0 ? "+" : ""}${f}%</small></th>`).join("")}<th class=r>실질(원) ${RT.kr}<br><small>환율 0%</small></th></tr></thead><tbody>
@@ -500,7 +500,7 @@ function realPanel(m) {
     ${row("KRW 원 (환율 불변) " + RT.kr, v.krw, inf.kr, "한국 물가 " + f2(inf.kr) + "% (" + inf.kr_src + ")")}
     ${v.usd == null ? "" : row("USD 달러 (환율 불변) " + RT.r, v.usd, inf.us, "미국 물가 " + f2(inf.us) + "% (" + inf.us_src + ")")}</tbody></table></div>
     <div class=note>실질 = (1+명목) ÷ (1+물가) − 1 · 명목 YTM ${f2(m.ytm)}%는 1년 기준 연율 · 전일 대비는 ${m.before ? brDate(m.before[0]) : "직전"} 대비(물가 기대는 동일 가정). <b>원화 기준 실질 0% 손익분기 BRL/KRW ≈ ${f2(be.krw)}</b> (현재 ${f2(m.fx)}, ${pct((be.krw / m.fx - 1) * 100, 1)})${be.usd ? ` · 달러 기준 ≈ ${f2(be.usd)}` : ""} — 이보다 환율이 내리면 물가를 뺀 구매력이 줄어듭니다.
-    ${v.usdkrwNow ? ` 달러 기준은 USD/KRW ${f2(v.usdkrw)}(현재 ${f2(v.usdkrwNow)} 유지)로 계산.` : ""} 한국 물가는 한국은행 소비자동향조사 3년 후 기대인플레이션율(ECOS, <b>가계 설문 기반이라 시장 기대보다 오차가 큼</b> · 원화 실질수익에 모든 선택지 공통으로 반영돼 PF32·5:5·달러채 순위에는 영향 없음), 미국 물가는 미 국채 손익분기 인플레이션(명목−TIPS, 5·7년 평균, 시장 기대)이며 모두 자동 갱신됩니다${D.infl && D.infl.kr && D.infl.kr.cpi && D.infl.us && D.infl.us.cpi ? " (참고: 최근 CPI 전년동월비 한국 " + f2(D.infl.kr.cpi.v) + "% · 미국 " + f2(D.infl.us.cpi.v) + "%)" : ""}.</div>`;
+    ${v.usdkrwNow ? ` 달러 기준은 USD/KRW ${f2(v.usdkrw)}(현재 ${f2(v.usdkrwNow)} 유지)로 계산.` : ""} 한국 물가는 한국은행 소비자동향조사 3년 후 기대인플레이션율(ECOS, <b>가계 설문 기반이라 시장 기대보다 오차가 큼</b> · ${RT.kr} 수익에 모든 선택지 공통으로 반영돼 PF32·5:5·달러채 순위에는 영향 없음), 미국 물가는 미 국채 손익분기 인플레이션(명목−TIPS, 5·7년 평균, 시장 기대)이며 모두 자동 갱신됩니다${D.infl && D.infl.kr && D.infl.kr.cpi && D.infl.us && D.infl.us.cpi ? " (참고: 최근 CPI 전년동월비 한국 " + f2(D.infl.kr.cpi.v) + "% · 미국 " + f2(D.infl.us.cpi.v) + "%)" : ""}.</div>`;
 }
 
 // ---------- 공용 컴포넌트 ----------
@@ -769,13 +769,13 @@ V.overview = m => {
       const gBr = ((1 + sr / 100) * (1 + kN / 100) / (1 + m.ytm / 100) - 1) * 100, gUs = ((1 + sr / 100) * (1 + kN / 100) / (1 + yU / 100) - 1) * 100;
       const nNeed = ((1 + sr / 100) * (1 + kN / 100) - 1) * 100 * 2 - yU, gMixB = ((1 + nNeed / 100) / (1 + m.ytm / 100) - 1) * 100;
       const stopRows = [
-        ["① 헤알채", worst(0), `헤알이 연 <b>${pct(gBr, 1)}</b> 아래로 약해지면 원화 실질 &lt; ${f2(sr, 1)}% → <b>손절 환율 ${f2(stopFx(m).level, 1)}</b> (${stopFx(m).byEntry ? "평균 매수 환율 " + f2(stopFx(m).anchor, 1) + " 기준" : "현재 환율 기준"}, 현재 대비 ${pct((stopFx(m).level / m.fx - 1) * 100, 1)})`],
-        ["② 달러채", worst(2), gUs > 0 ? `환율 불변이면 기준 미달 — 달러가 연 <b>${pct(gUs, 1)}</b> 이상 올라야(1년 뒤 USD/KRW ≈ <b>${f2(uk ? uk.now * (1 + gUs / 100) : 0, 0)}</b>) 원화 실질 ≥ ${f2(sr, 1)}%` : `달러가 연 <b>${pct(gUs, 1)}</b> 아래로 떨어지면 원화 실질 &lt; ${f2(sr, 1)}%`],
-        ["③ 5:5", worst(1), `달러 환율 불변일 때 헤알이 연 <b>${pct(gMixB, 1)}</b> 아래로 약해지면(≈ <b>${f2(m.fx * (1 + gMixB / 100), 1)}</b>) 원화 실질 &lt; ${f2(sr, 1)}%`]];
+        ["① 헤알채", worst(0), `헤알이 연 <b>${pct(gBr, 1)}</b> 아래로 약해지면 ${RT.kr} &lt; ${f2(sr, 1)}% → <b>손절 환율 ${f2(stopFx(m).level, 1)}</b> (${stopFx(m).byEntry ? "평균 매수 환율 " + f2(stopFx(m).anchor, 1) + " 기준" : "현재 환율 기준"}, 현재 대비 ${pct((stopFx(m).level / m.fx - 1) * 100, 1)})`],
+        ["② 달러채", worst(2), gUs > 0 ? `환율 불변이면 기준 미달 — 달러가 연 <b>${pct(gUs, 1)}</b> 이상 올라야(1년 뒤 USD/KRW ≈ <b>${f2(uk ? uk.now * (1 + gUs / 100) : 0, 0)}</b>) ${RT.kr} ≥ ${f2(sr, 1)}%` : `달러가 연 <b>${pct(gUs, 1)}</b> 아래로 떨어지면 ${RT.kr} &lt; ${f2(sr, 1)}%`],
+        ["③ 5:5", worst(1), `달러 환율 불변일 때 헤알이 연 <b>${pct(gMixB, 1)}</b> 아래로 약해지면(≈ <b>${f2(m.fx * (1 + gMixB / 100), 1)}</b>) ${RT.kr} &lt; ${f2(sr, 1)}%`]];
       const stopHtml = `<div class="callout ${stopRows.some(r => r[1] < sr) ? "bad" : "sum"}" style="margin-top:8px"><b>⛔ 손절 지표 ${RT.kr} — 어느 환율 가정에서든 원화 실질 수익률 ${f2(sr, 1)}% 미만이면 손절 구간</b>
         <label class=noprint style="font-size:11px;white-space:nowrap;float:right">손절 기준 실질(원화) <input type=number step=0.5 min=-10 max=30 value="${sr}" onchange="stopEdit(this)" style="width:62px;text-align:right;padding:2px 4px">%</label>
         ${stopRows.map(r => `<div style="margin-top:4px">${r[1] < sr ? '<b class=neg>⚠ 구간 해당</b>' : '<b class=pos>✔ 기준 충족</b>'} <b>${r[0]}</b> · 최악 가정 <b>${pct(r[1], 1)}</b>(${r[1] < sr ? "미달" : "여유 " + f2(r[1] - sr, 1) + "%p"}) · ${r[2]}</div>`).join("")}
-        <small>환율 가정 4종(환율 불변·5년 연평균·헤알 약세·원화 강세형[헤알·달러 동반 약세]) 중 최악 기준 · 원화 실질 = 만기 보유 연율, 한국 물가 ${f2(kN)}% 차감 · 환율 한도는 1년간 연 변동 가정</small></div>`;
+        <small>환율 가정 4종(환율 불변·5년 연평균·헤알 약세·원화 강세형[헤알·달러 동반 약세]) 중 최악 기준 · ${RT.kr} = 만기 보유 연율, 한국 물가 ${f2(kN)}% 차감 · 환율 한도는 1년간 연 변동 가정</small></div>`;
       const cb = consistentBuy(m), cbIdx = uk && days.length > 1 ? (() => { const b0 = {a: pfMap.get(days[0]).p * fxAt(days[0]), b: uMap.get(days[0]).p * ukAt(days[0])}; return 100 * (0.5 * sg.pf(m.ytm + cb.d[2]) * m.fx / b0.a + 0.5 * sg.us(sg.yU + cb.d[2]) * uk.now / b0.b); })() : null;
       const consTxt = [`${f2(cb.req[0], 1)}% (PU ≤ ${f2(cb.line[0])})`, `${f2(cb.req[1], 1)}% (가격 ≤ ${f2(cb.line[1])})`, `${f2(cb.req[2], 1)}%${cbIdx != null ? " (평가지수 ≤ " + f2(cbIdx) + ")" : ""}`];
       const loose = [0, 1, 2].map(j => BR(j) < cb.req[j] - 0.05);
@@ -788,11 +788,11 @@ V.overview = m => {
       const sigHtml = `<div class="callout ${anyOn ? "go" : "sum"}"><b>${anyOn ? "🔔" : "⏳"} 매수 지표 — 실질 수익률 기준 가격선</b> ${RT.r} <small>(가격이 선 이하 = 실질 YTM ≥ 기준 → ON · 헤알 기준·달러 기준, 환율 위험 미반영)</small>
         ${sigRows.map((r, j) => `<div style="margin-top:5px;display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px">${badge(r[1], r[2])} <span style="flex:1;min-width:230px"><b>${r[0]}</b> · ${r[3]}</span>
           <label class=noprint style="font-size:11px;white-space:nowrap">기준 실질 <input type=number step=0.5 min=-5 max=30 value="${BR(j)}" data-j="${j}" onchange="buyEdit(this)" style="width:62px;text-align:right;padding:2px 4px">%</label>
-          <div style="flex-basis:100%;font-size:11px;padding-left:2px;${loose[j] ? "color:var(--bad);font-weight:700" : ""}">${loose[j] ? "⚠" : "✔"} 기준 ${f2(BR(j), 1)}%에 매수하면 <b>원화 실질</b> 최악 <b>${pct(st4(kz.at[j]).lo, 2)}</b> ${st4(kz.at[j]).lo >= SR() ? "≥" : "<"} 손절 ${f2(SR(), 1)}% <span style="font-weight:400;opacity:.8">· 평균 ${pct(st4(kz.at[j]).av, 2)} · 최선 ${pct(st4(kz.at[j]).hi, 2)}</span></div>
-          <div style="flex-basis:100%;font-size:11px;padding-left:2px;opacity:.7">현재 현지 실질 ${pct(kz.local.now[j], 2)} → 원화 실질 최악 ${pct(st4(kz.now[j]).lo, 2)} · 평균 ${pct(st4(kz.now[j]).av, 2)} · 최선 ${pct(st4(kz.now[j]).hi, 2)} · 정합 기준 실질 ≥ ${consTxt[j]}</div>${zl(j, r[1])}</div>`).join("")}
+          <div style="flex-basis:100%;font-size:11px;padding-left:2px;${loose[j] ? "color:var(--bad);font-weight:700" : ""}">${loose[j] ? "⚠" : "✔"} 기준 ${f2(BR(j), 1)}%에 매수하면 ${RT.kr} 최악 <b>${pct(st4(kz.at[j]).lo, 2)}</b> ${st4(kz.at[j]).lo >= SR() ? "≥" : "<"} 손절 ${f2(SR(), 1)}% <span style="font-weight:400;opacity:.8">· 평균 ${pct(st4(kz.at[j]).av, 2)} · 최선 ${pct(st4(kz.at[j]).hi, 2)}</span></div>
+          <div style="flex-basis:100%;font-size:11px;padding-left:2px">현재 현지 실질 ${pct(kz.local.now[j], 2)} → ${RT.kr} 최악 ${pct(st4(kz.now[j]).lo, 2)} · 평균 ${pct(st4(kz.now[j]).av, 2)} · 최선 ${pct(st4(kz.now[j]).hi, 2)} · 정합 기준 실질 ≥ ${consTxt[j]}</div>${zl(j, r[1])}</div>`).join("")}
         ${tgtHtml}
         ${(() => { const cell = v => `<span class="${v < SR() ? "neg" : ""}">${pct(v, 2)}</span>`, w = a => Math.min(...a);
-          return `<details class=fold ${krwOpen ? "open" : ""} ontoggle="krwOpen=this.open" style="margin-top:8px"><summary>현지 실질 → 원화 실질 환산 — 환율 가정별 (펼치기)</summary><div><div class=tbl><table class=mono><thead><tr><th rowspan=2>환율 가정<br><small>연 변동 헤알 / 달러</small></th>${["① 헤알채", "② 달러채", "③ 5:5"].map(n => `<th class=r colspan=2>${n}</th>`).join("")}</tr><tr>${[0, 1, 2].map(j => `<th class=r><small>현재<br>현지 ${pct(kz.local.now[j], 2)}</small></th><th class=r><small>기준<br>현지 ${f2(kz.local.at[j], 1)}%</small></th>`).join("")}</tr></thead><tbody>
+          return `<details class=fold ${krwOpen ? "open" : ""} ontoggle="krwOpen=this.open" style="margin-top:8px"><summary>현지 실질 → ${RT.kr} 환산 — 환율 가정별 (펼치기)</summary><div><div class=tbl><table class=mono><thead><tr><th rowspan=2>환율 가정<br><small>연 변동 헤알 / 달러</small></th>${["① 헤알채", "② 달러채", "③ 5:5"].map(n => `<th class=r colspan=2>${n}</th>`).join("")}</tr><tr>${[0, 1, 2].map(j => `<th class=r><small>현재<br>현지 ${pct(kz.local.now[j], 2)}</small></th><th class=r><small>기준<br>현지 ${f2(kz.local.at[j], 1)}%</small></th>`).join("")}</tr></thead><tbody>
           ${kz.names.map((n, i) => `<tr><td>${n}<br><small>${pct(kz.g[i][0], 1)} / ${pct(kz.g[i][1], 1)}</small></td>${[0, 1, 2].map(j => `<td class=r>${cell(kz.now[j][i])}</td><td class=r>${cell(kz.at[j][i])}</td>`).join("")}</tr>`).join("")}
           <tr style="font-weight:700"><td>최악 ${RT.kr}</td>${[0, 1, 2].map(j => `<td class=r>${cell(w(kz.now[j]))}</td><td class=r>${cell(w(kz.at[j]))}</td>`).join("")}</tr>
           <tr><td>평균 <small>4종 단순</small></td>${[0, 1, 2].map(j => `<td class=r>${pct(st4(kz.now[j]).av, 2)}</td><td class=r>${pct(st4(kz.at[j]).av, 2)}</td>`).join("")}</tr>
@@ -914,7 +914,7 @@ function ladderHtml(m) {
     return `<tr><td style="white-space:normal">${x.lab}</td><td class=r><b>${f2(x.p)}</b></td><td class=r>${pct((x.p / m.price - 1) * 100, 1)}</td><td class=r>${f2(y)}% <small>(${bp >= 0 ? "+" : ""}${f2(bp, 0)}bp)</small></td><td class=r>${pct(real(y, sg.brI), 1)}</td><td class=r>${pct(real(y, kN), 1)} / ${pct(w, 1)}</td><td class=r>${w >= SR() ? '<b class=pos>✔ 충족</b>' : '<b class=neg>⚠ 미달</b>'}</td><td style="white-space:normal;font-size:11px">${reachTxt(bp)}</td></tr>`; }).join("");
   return `<div style="margin-top:12px"><b>매수 사다리 제안</b> <small>현 지정가 · 매수 기준선 · 손절 규칙 정합선</small>
     <div class=tbl><table class=mono><thead><tr><th>수준</th><th class=r>PU</th><th class=r>현재 대비</th><th class=r>YTM(변동)<br>${RT.n}</th><th class=r>헤알 실질<br>${RT.r}</th><th class=r>원화 실질<br><small>불변 / 최악</small><br>${RT.kr}</th><th class=r>손절 규칙</th><th>과거 도달 빈도<br><small>금리가 N 안에 한 번이라도 그만큼↑</small></th></tr></thead><tbody>${rows}</tbody></table></div>
-    <div class="note noprint">손절 규칙=환율 가정 최악에서도 원화 실질 ≥ ${f2(SR(), 1)}%. 정합선보다 높은 가격에서 사면 최악 가정에서 규칙 미달입니다. 도달 빈도는 잔존 약 5년 Prefixado의 2016-10 이후 이력(하한 기준)이며 미래를 보장하지 않습니다. 금리 상승기에는 헤알도 약해지는 경향(상관 약 -0.4)이 있어 매수 시점 환율이 더 낮을 수 있습니다.
+    <div class="note noprint">손절 규칙=환율 가정 최악에서도 ${RT.kr} ≥ ${f2(SR(), 1)}%. 정합선보다 높은 가격에서 사면 최악 가정에서 규칙 미달입니다. 도달 빈도는 잔존 약 5년 Prefixado의 2016-10 이후 이력(하한 기준)이며 미래를 보장하지 않습니다. 금리 상승기에는 헤알도 약해지는 경향(상관 약 -0.4)이 있어 매수 시점 환율이 더 낮을 수 있습니다.
       <br><button onclick="ladderApply()" style="font-size:11px;padding:3px 9px;font-weight:700">미체결 단계를 이 사다리로 분할…</button> 확인 후 이 기기 설정에만 반영됩니다.</div></div>`;
 }
 V.stages = m => {
@@ -928,11 +928,11 @@ V.stages = m => {
     <div class=bar>${bar}</div>
     ${!hasPx ? `<div class=warn>체결가·지정가가 비어 있습니다. <b>설정</b> 탭에서 입력하세요 (이 기기 브라우저에만 저장, 서버·GitHub로 전송되지 않음).</div>` : ""}
     ${nx ? `<div class="callout ${reached ? "go" : ""} mono" style="font-size:15px">${reached ? "🔔 <b>체결 조건 충족</b>" : "⏳ <b>대기</b>"} — ${m.next.name} 지정가 <b>${f2(m.next.price)}</b> · 현재 <b>${f2(m.price)}</b> · ${reached ? "<b>지정가 이하</b>" : f2(gap) + " BRL 남음 (" + f2(gap / m.price * 100) + "%)"}</div>` : ""}
-    ${m.fx && sf.near ? `<div class="callout bad">⚠ BRL/KRW <b class=mono>${f2(m.fx)}</b>가 손절 환율 <b class=mono>${f2(sf.level, 1)}</b>에 ${m.fx <= sf.level ? "이탈" : f2((m.fx / sf.level - 1) * 100, 1) + "% 이내로 근접"} — 정리 검토 (원화 실질 ${f2(sp.sr, 1)}% 규칙)</div>` : ""}
+    ${m.fx && sf.near ? `<div class="callout bad">⚠ BRL/KRW <b class=mono>${f2(m.fx)}</b>가 손절 환율 <b class=mono>${f2(sf.level, 1)}</b>에 ${m.fx <= sf.level ? "이탈" : f2((m.fx / sf.level - 1) * 100, 1) + "% 이내로 근접"} — 정리 검토 (${RT.kr} ${f2(sp.sr, 1)}% 규칙)</div>` : ""}
     <div class=grid style="margin-top:10px">
       <div class=card><small>현재 평균 (체결분)</small><b class=mono>${f2(m.avg)}</b><div class=note>체결 ${m.filledPct}% 가중평균 · ${m.avg ? "현재가 대비 " + pct((m.price / m.avg - 1) * 100) : "체결가 미입력"}</div></div>
       <div class=card><small>${m.filledPct > 0 ? "남은 단계까지 체결 시 예상 평균" : "전 단계 체결 시 예상 평균 (가정)"}</small><b class=mono>${f2(m.avgAll)}</b><div class=note>${m.filledPct > 0 ? "남은 단계가 모두 지정가에 체결된다고 가정" : "<span style=\"font-weight:700\">아직 체결 없음</span> — 3단계가 모두 지정가에 체결된다고 가정한 평균"} (${total_}%)</div></div>
-      <div class="card" style="${sp.worst < sp.sr ? "border:2px solid var(--bad)" : ""}"><small>손절 기준 · 원화 실질</small><b class=mono>${f2(sp.sr, 1)}%</b><div class=note>PF32 최악 환율 가정 <span style="font-weight:700">${pct(sp.worst, 1)}</span> ${sp.worst < sp.sr ? '<span class=neg style="font-weight:700">⚠ 미달</span>' : '<span class=pos style="font-weight:700">✔ 충족</span>'} · 헤알이 연 <span style="font-weight:700">${pct(sp.lim, 1)}</span> 아래(1년 뒤 BRL/KRW ≈ ${f2(sp.limFx, 1)})면 미달${m.fx ? ` · 손절 환율 <span style="font-weight:700">${f2(sf.level, 1)}</span>(${sf.byEntry ? "평균 매수 환율 " + f2(sf.anchor, 1) : "현재 환율"} 기준 · 현재 대비 ${pct((sf.level / m.fx - 1) * 100, 1)})` : ""} · 상세는 01 탭</div></div>
+      <div class="card" style="${sp.worst < sp.sr ? "border:2px solid var(--bad)" : ""}"><small>손절 기준 ·</small> ${RT.kr}<b class=mono>${f2(sp.sr, 1)}%</b><div class=note>PF32 최악 환율 가정 <span style="font-weight:700">${pct(sp.worst, 1)}</span> ${sp.worst < sp.sr ? '<span class=neg style="font-weight:700">⚠ 미달</span>' : '<span class=pos style="font-weight:700">✔ 충족</span>'} · 헤알이 연 <span style="font-weight:700">${pct(sp.lim, 1)}</span> 아래(1년 뒤 BRL/KRW ≈ ${f2(sp.limFx, 1)})면 미달${m.fx ? ` · 손절 환율 <span style="font-weight:700">${f2(sf.level, 1)}</span>(${sf.byEntry ? "평균 매수 환율 " + f2(sf.anchor, 1) : "현재 환율"} 기준 · 현재 대비 ${pct((sf.level / m.fx - 1) * 100, 1)})` : ""} · 상세는 01 탭</div></div>
       <div class="card" style="${tg.reached ? "border:2px solid var(--ok)" : ""}"><small>수익 TARGET · 실질 <input class=noprint type=number step=0.5 min=0 max=30 value="${tg.tr}" onchange="targetEdit(this)" style="width:46px;text-align:right;padding:1px 3px;font-size:11px;display:inline-block">%</small><b class=mono>${f2(tg.line)}</b><div class=note>${tg.reached ? '<span class=pos style="font-weight:700">🎯 도달</span> · ' : ""}현재가 대비 <span style="font-weight:700">${pct((tg.line / m.price - 1) * 100)}</span> · ${m.filledPct > 0 && m.avg ? "평균 체결 " + f2(m.avg) + " 대비 " + pct((tg.line / m.avg - 1) * 100) : "전 단계 체결 시 평균 " + f2(m.avgAll) + " 대비 " + pct((tg.line / m.avgAll - 1) * 100)} · 헤알 실질이 ${tg.tr}%로 줄면 정리 검토(PU 선은 시간이 지나면 올라감)</div></div>
     </div>
     ${ladderHtml(m)}
@@ -954,7 +954,7 @@ V.fx = m => {
   return `<section><h2>03 환율 BRL/KRW — ${lo}–${hi} RANGE</h2><div class=body>
     <div class=mono>현재 <b>${f2(m.fx)}</b> (${D.fx.latest ? brDate(D.fx.latest[0]) : ""}) · 10년 최저 ${f2(Math.min(...s))} / 최고 ${f2(Math.max(...s))}</div>
     <div class=rng><i style="left:${pos}%"></i><em style="left:0">${lo}</em><em style="left:100%">${hi}</em><em style="left:${pos}%;top:-20px">▼ ${f2(m.fx)}</em></div>
-    <div class="callout ${stopFx(m).near ? "bad" : "sum"}">${stopFx(m).near ? "<b class=neg>⚠ 손절 환율 근접</b><br>" : ""}<b>핵심</b> — 원화 실질 손익분기 환율 <b class=mono style="font-size:18px">${f2(be.krw)}</b> <span class=mono>(현재 대비 ${pct((be.krw / m.fx - 1) * 100, 1)})</span>· 손절 환율 <b class=mono>${f2(stopFx(m).level, 1)}</b> <span class=mono>(${stopFx(m).byEntry ? "평균 매수 환율 " + f2(stopFx(m).anchor, 1) + " 기준 · " : ""}현재 대비 ${pct((stopFx(m).level / m.fx - 1) * 100, 1)})</span><br><small>1년 보유 기준: 헤알이 손익분기보다 약해지면 물가를 뺀 원화 구매력이 줄어듭니다.</small></div>
+    <div class="callout ${stopFx(m).near ? "bad" : "sum"}">${stopFx(m).near ? "<b class=neg>⚠ 손절 환율 근접</b><br>" : ""}<b>핵심</b> — ${RT.kr} 손익분기 환율 <b class=mono style="font-size:18px">${f2(be.krw)}</b> <span class=mono>(현재 대비 ${pct((be.krw / m.fx - 1) * 100, 1)})</span>· 손절 환율 <b class=mono>${f2(stopFx(m).level, 1)}</b> <span class=mono>(${stopFx(m).byEntry ? "평균 매수 환율 " + f2(stopFx(m).anchor, 1) + " 기준 · " : ""}현재 대비 ${pct((stopFx(m).level / m.fx - 1) * 100, 1)})</span><br><small>1년 보유 기준: 헤알이 손익분기보다 약해지면 물가를 뺀 원화 구매력이 줄어듭니다.</small></div>
     <div style="margin-top:14px"><b>실질수익률 (인플레 제거)</b>${realPanel(m)}</div>
     <div style="margin-top:22px">${spark(s.slice(-260), 560, 90)}<div class=note>최근 데이터 추이 (ECB 기준, 주말·휴일 제외)</div></div>
     <div class=tbl><table class=mono><thead><tr><th class=r>BRL/KRW</th><th class=r>FX</th><th class=r>YTM<br>${RT.n}</th><th class=r>총수익(원)<br>${RT.kn}</th><th class=r>실질(원)<br>${RT.kr}</th><th class=r>총수익($)<br><small>환율 반영·물가 미보정</small></th><th class=r>실질($)<br><small>미국 물가 보정</small></th><th>비고</th></tr></thead><tbody>${rows}</tbody></table></div>
@@ -1021,7 +1021,7 @@ function realCmpSection(m) {
     <div class=tbl><table class=mono><thead><tr><th>환율 가정</th><th>기간<br><small>1년 구간 종료일 기준</small></th><th class=r>실제 평균<br><small>헤알 / 달러</small></th><th class=r>투자자 수익 ${RT.kr}<br><small>실질(원) PF32 / 5:5 / 달러채</small></th><th>한국</th><th>브라질</th><th>미국</th><th style="min-width:280px">직전 1년간 주요 이벤트</th></tr></thead><tbody>
     ${cases.map((c, ci) => { const [bi, wi] = bw(eps[ci]); return eps[ci].length ? eps[ci].map((e, k) => { const bg = k === bi ? "background:rgba(34,160,70,.28);" : k === wi ? "background:rgba(220,53,69,.28);" : "", st = (x = "") => ` style="${bg}${x}"`;
       return `<tr${k === 0 ? ' style="border-top:2px solid var(--ink)"' : ""}>${k === 0 ? `<td rowspan=${eps[ci].length} style="white-space:normal;vertical-align:top;min-width:120px"><b>${c[0].split("(")[0]}</b><br><small>${f2(c[1], 1)}% / ${f2(c[2], 1)}%</small></td>` : ""}<td${st()}>${e.a.slice(2, 7).replace("-", ".")}~${e.b.slice(2, 7).replace("-", ".")}${k === bi ? "<br><small><b>최선</b></small>" : k === wi ? "<br><small><b>최악</b></small>" : ""}</td><td class=r${st()}>${pct(e.rb, 1)} / ${pct(e.ru, 1)}</td><td class=r${st()}>${pct(e.ret[0], 1)} / <b>${pct(e.ret[1], 1)}</b> / ${pct(e.ret[2], 1)}</td><td${st("white-space:normal;")}>${order("한국", e.seg)}</td><td${st("white-space:normal;")}>${order("브라질", e.seg)}</td><td${st("white-space:normal;")}>${order("미국", e.seg)}</td><td${st("white-space:normal;font-size:11px;")}>${evOf(e) || "—"}</td></tr>`; }).join("") : ""; }).join("")}</tbody></table></div>
-    <div class=note>각 가정에 가장 가까웠던 구간이 <b>4주 이상 이어진 경우만</b> 시간 순서로 표시했습니다(짧은 구간은 생략). 정권은 구간 동안 바뀐 순서대로(→) 표시하고, 이벤트는 구간 시작 1년 전부터 종료일까지의 공개 보도 기반 요약(미=미국, 브=브라질, 한=한국, 글=글로벌)으로 <b>환율 영향은 추정</b>이며 빠진 사건이 있을 수 있습니다. 정권·사건과 환율의 인과관계를 단정할 수 없습니다. <span style="background:rgba(34,160,70,.28);padding:1px 6px">가정별 최선 구간</span> <span style="background:rgba(220,53,69,.28);padding:1px 6px">가정별 최악 구간</span> = 투자자 수익(5:5 기준, 12개월 보유·원화 실질, 시나리오 확률가중 진입 YTM + 그 구간의 실제 평균 환율)이 가장 높은·낮은 구간(구간이 2개 이상인 가정만).</div>` : "";
+    <div class=note>각 가정에 가장 가까웠던 구간이 <b>4주 이상 이어진 경우만</b> 시간 순서로 표시했습니다(짧은 구간은 생략). 정권은 구간 동안 바뀐 순서대로(→) 표시하고, 이벤트는 구간 시작 1년 전부터 종료일까지의 공개 보도 기반 요약(미=미국, 브=브라질, 한=한국, 글=글로벌)으로 <b>환율 영향은 추정</b>이며 빠진 사건이 있을 수 있습니다. 정권·사건과 환율의 인과관계를 단정할 수 없습니다. <span style="background:rgba(34,160,70,.28);padding:1px 6px">가정별 최선 구간</span> <span style="background:rgba(220,53,69,.28);padding:1px 6px">가정별 최악 구간</span> = 투자자 수익(5:5 기준, 12개월 보유·${RT.kr}, 시나리오 확률가중 진입 YTM + 그 구간의 실제 평균 환율)이 가장 높은·낮은 구간(구간이 2개 이상인 가정만).</div>` : "";
   const ann = (y, g) => ((1 + y / 100) * (1 + g / 100) - 1) * 100;
   const all = cases.map(c => r.rows.map(x => {
     const kP = ann(x.yin, c[1]), kU = ann(b.ytm + x.sp / 100, c[2]);
@@ -1041,8 +1041,8 @@ function realCmpSection(m) {
     return rs.map((o, k) => `<tr${k === 0 ? ' style="border-top:2px solid var(--ink)"' : ""}>${k === 0 ? `<td rowspan=5 style="white-space:normal;min-width:170px;vertical-align:top"><b>${c[0]}</b><br><small>헤알 연 ${inp(ci, 1, c[1])}% · 달러 연 ${inp(ci, 2, c[2])}%</small>${roll ? `<br><span style="display:inline-block;margin-top:4px;font-weight:700">과거 발생빈도 ${f2(cnt[ci] / roll.length * 100, 0)}%</span><br><small style="font-weight:400">${regTxt(ci)}</small>` : ""}</td>` : ""}<td style="white-space:normal">${o.x.name.split(" ")[0]} <small>${f2(o.x.w * 100, 0)}%</small></td><td class=r>${f2(o.x.yin, 2)}%</td><td class=r>${f2(b.ytm + o.x.sp / 100, 2)}%</td>${cellS(o.v, k)}</tr>`).join("")
       + `<tr style="font-weight:700"><td>EV</td><td></td><td></td>${cell([ev(0), ev(1), ev(2)], bi([ev(0), ev(1), ev(2)]))}</tr>`;
   }).join("");
-  return `<section id=s042><h2>04-2 헤알채(PF32) vs 달러표시 채권 — 원화 실질 만기수익률 비교</h2><div class=body>
-    <div class=note>확인 뒤 매수한 진입 YTM로 만기까지 보유할 때의 <b>연율 원화 실질 수익률</b>(한국 물가 ${f2(kr, 1)}% 차감). 달러채는 <b>${b.n}</b> 기준(04-1에서 종목 선택). 환율은 <b>진입 후 연 변동</b>이며 헤알=BRL/KRW, 달러=USD/KRW. 진입 전 환율 충격은 매수가에 이미 반영된 것으로 봅니다. 환율은 원화 기준 가격이라 <b>양수 = 해당 통화 강세(원화 약세), 음수 = 해당 통화 약세(원화 강세)</b>입니다. 달러채 투자자에게 불리한 쪽은 달러 연 변동이 음수일 때(원화 강세)입니다. 기본값은 최근 ${(D.fx_stats || FXS_DEF).yrs}년 원화 기준 실제 환율에서 계산했습니다(연평균 = 5년 전 대비 연 환산 변화율, 강세·약세 구간 평균 = 5년간 롤링 1년 변화율 중 오른 구간·내린 구간의 평균). 입력칸에서 수정할 수 있습니다. <button class=noprint onclick="delete C.rc3;try{localStorage.setItem('pf32cfg',JSON.stringify(C))}catch(e){};if(LOCAL)fetch('/api/config',{method:'POST',body:JSON.stringify(C)}).catch(()=>{});render(true)">기본값으로</button></div>
+  return `<section id=s042><h2>04-2 헤알채(PF32) vs 달러표시 채권 — ${RT.kr} 만기수익률 비교</h2><div class=body>
+    <div class=note>확인 뒤 매수한 진입 YTM로 만기까지 보유할 때의 <b>연율</b> ${RT.kr} <b>수익률</b>(한국 물가 ${f2(kr, 1)}% 차감). 달러채는 <b>${b.n}</b> 기준(04-1에서 종목 선택). 환율은 <b>진입 후 연 변동</b>이며 헤알=BRL/KRW, 달러=USD/KRW. 진입 전 환율 충격은 매수가에 이미 반영된 것으로 봅니다. 환율은 원화 기준 가격이라 <b>양수 = 해당 통화 강세(원화 약세), 음수 = 해당 통화 약세(원화 강세)</b>입니다. 달러채 투자자에게 불리한 쪽은 달러 연 변동이 음수일 때(원화 강세)입니다. 기본값은 최근 ${(D.fx_stats || FXS_DEF).yrs}년 원화 기준 실제 환율에서 계산했습니다(연평균 = 5년 전 대비 연 환산 변화율, 강세·약세 구간 평균 = 5년간 롤링 1년 변화율 중 오른 구간·내린 구간의 평균). 입력칸에서 수정할 수 있습니다. <button class=noprint onclick="delete C.rc3;try{localStorage.setItem('pf32cfg',JSON.stringify(C))}catch(e){};if(LOCAL)fetch('/api/config',{method:'POST',body:JSON.stringify(C)}).catch(()=>{});render(true)">기본값으로</button></div>
     <div class=tbl><table class=mono><thead><tr><th>환율 가정</th><th>시나리오</th><th class=r>PF32<br>진입 YTM ${RT.n}</th><th class=r>달러채<br>진입 YTM ${RT.n}</th><th class=r>PF32 100%<br><small>실질(원)</small> ${RT.kr}</th><th class=r>5:5<br><small>실질(원)</small> ${RT.kr}</th><th class=r>달러채 100%<br><small>실질(원)</small> ${RT.kr}</th></tr></thead><tbody>${body}</tbody></table></div>
     <div class=note><span style="background:${GR}.6);padding:1px 6px;font-weight:700">전체 최선 ${pct(gMax, 1)}</span> <span style="background:${RD}.6);padding:1px 6px;font-weight:700">전체 최악 ${pct(gMin, 1)}</span> <span style="background:${GR}.22);padding:1px 6px">시나리오별 최선</span> <span style="background:${RD}.22);padding:1px 6px">시나리오별 최악</span> — 투자자 수익률 기준(환율 가정 5개 × 구성 3개 중 비교, EV 행 제외)</div>
     ${(() => { const T = (D.fx_stats && D.fx_stats.terms) || FXT_DEF, c = v => `<td class=r>${pct(v.chg, 1)}</td><td class=r>${pct(v.cagr, 1)}</td>`;
@@ -1123,7 +1123,7 @@ const HELP = [
   {k: "start", t: "시작하기 — 이 앱은 무엇이고 어떻게 쓰나", h: `
     <p><b>목적</b> — PF32(Tesouro Prefixado 2032, 만기 2032-01-01, 이자 없이 만기에 1,000헤알을 받는 제로쿠폰)를 <b>분할매수</b>할 때, 감이 아니라 <b>숫자와 규칙</b>으로 판단하도록 돕는 개인 대시보드입니다. 미래를 맞히는 도구가 아니라 <b>가정과 규칙을 점검</b>하는 도구입니다.</p>
     <p><b>세 가지 원칙</b></p>
-    <ol><li><b>현지통화 수익률과 원화 수익률은 다릅니다.</b> 헤알채 13%와 달러채 6%는 환율 위험이 빠진 값이라 직접 비교할 수 없습니다. 비교는 항상 <b>원화 실질</b>(환율 가정 반영, 한국 물가 차감)로 합니다.</li>
+    <ol><li><b>현지통화 수익률과 원화 수익률은 다릅니다.</b> 헤알채 13%와 달러채 6%는 환율 위험이 빠진 값이라 직접 비교할 수 없습니다. 비교는 항상 ${RT.kr}(환율 가정 반영, 한국 물가 차감)로 합니다.</li>
       <li><b>가정은 예측이 아닙니다.</b> 환율·금리·정치 시나리오는 입력값이며, "이런 경우 이렇게 된다"를 보는 용도입니다.</li>
       <li><b>모든 규칙은 실질 수익률 기준으로 통일</b>했습니다(매수선, 손절 규칙, 수익 소진 TARGET). 고정 가격 기준은 제로쿠폰이 시간이 지나면 가격이 저절로 오르므로 의미가 변합니다.</li></ol>
     <p><b>하루 사용법 — 아침 3분 점검표</b></p>
@@ -1137,14 +1137,14 @@ const HELP = [
     <div class=tbl><table><thead><tr><th>용어</th><th>뜻</th><th>쓰이는 곳</th></tr></thead><tbody>
     <tr><td><b>PU</b></td><td>채권 1단위 가격. PF32는 만기에 1,000헤알. 가격이 오르면 수익률(YTM)은 내려갑니다.</td><td>전체</td></tr>
     <tr><td><b>YTM</b>(만기수익률)</td><td>지금 사서 만기까지 보유할 때의 연 수익률(명목). 제로쿠폰이라 PU와 1:1로 연결됩니다.</td><td>01·02·04</td></tr>
-    <tr><td><b>수익률 표기</b><br>(명목·실질·원화)</td><td>화면의 모든 수익률에는 종류 표시가 붙습니다. <b>명목</b> = 현지통화 기준, 물가·환율 보정 없음(YTM, 이자수익률). <b>실질</b> = 현지통화 기준에 물가만 보정(환율 미반영). <b>원화 명목</b> = 환율을 반영하고 물가는 보정하지 않음(원화 평가 변동, 12개월 EV). <b>원화 실질</b> = 환율 반영 후 한국 물가까지 보정(손절·정합 기준, 04-2·05). 표시 위에 마우스를 올리면 설명이 나옵니다. 06 탭의 IPCA+·Renda+·Educa+ 수익률은 물가에 더해지는 실질금리라 <b>실질</b>, Prefixado·Selic은 <b>명목</b>입니다.</td><td>전체</td></tr>
+    <tr><td><b>수익률 표기</b><br>(명목·실질·원화)</td><td>화면의 모든 수익률에는 종류 표시가 붙습니다. <b>명목</b> = 현지통화 기준, 물가·환율 보정 없음(YTM, 이자수익률). <b>실질</b> = 현지통화 기준에 물가만 보정(환율 미반영). <b>원화 명목</b> = 환율을 반영하고 물가는 보정하지 않음(원화 평가 변동, 12개월 EV). ${RT.kr} = 환율 반영 후 한국 물가까지 보정(손절·정합 기준, 04-2·05). 표시 위에 마우스를 올리면 설명이 나옵니다. 06 탭의 IPCA+·Renda+·Educa+ 수익률은 물가에 더해지는 실질금리라 <b>실질</b>, Prefixado·Selic은 <b>명목</b>입니다.</td><td>전체</td></tr>
     <tr><td><b>듀레이션</b>(수정)</td><td>금리가 1%p 오를 때 가격이 대략 몇 % 내리는지의 민감도(수정 듀레이션 ≈ 가격 변동률 ÷ 금리 변동). PF32는 제로쿠폰이라 잔존연수 ÷ (1+YTM), 달러채는 반기 이표 현금흐름을 직접 할인해 계산합니다(매콜리 듀레이션 ÷ (1+YTM÷2)). 값이 클수록 금리 변화에 가격이 크게 움직입니다. 만기까지 보유하면 가격 변동은 만기에 사라집니다.</td><td>01·04-1</td></tr>
     <tr><td><b>실질 YTM</b></td><td>(1+명목) ÷ (1+물가) − 1. 물가를 뺀 구매력 기준 수익률. 헤알채는 브라질 물가(Focus 기대), 달러채는 미국 물가(국채 손익분기)를 뺍니다.</td><td>01·03</td></tr>
-    <tr><td><b>원화 실질</b></td><td>(1+YTM) × (1+환율 변동) ÷ (1+한국 물가) − 1. 환율 위험을 반영한 내 기준 수익률. 환율 변동은 "가정"입니다.</td><td>01·04-2·05</td></tr>
+    <tr><td>${RT.kr}</td><td>(1+YTM) × (1+환율 변동) ÷ (1+한국 물가) − 1. 환율 위험을 반영한 내 기준 수익률. 환율 변동은 "가정"입니다.</td><td>01·04-2·05</td></tr>
     <tr><td><b>환율 가정 4종</b></td><td>환율 불변 / 5년 연평균 / 헤알 약세(최근 5년 중 약세였던 구간의 평균) / <b>원화 강세형</b>(원화가 강해져 헤알·달러가 함께 약세 — 04-2의 "투자자 최악형"). 이 중 <b>최악</b>값을 규칙 판단에 씁니다. 원화 강세형은 달러채·5:5의 최악값을 크게 낮춥니다. 5년 최악이나 위기 때는 이보다 훨씬 나쁠 수 있습니다.</td><td>01·02</td></tr>
     <tr><td><b>5:5</b></td><td>PF32 50% + 달러표시채 50%. 헤알 약세 위험을 달러채로 일부 헤지하는 구성(재조정·환헤지 없음).</td><td>01·05</td></tr>
     <tr><td><b>매수 지표(가격선)</b></td><td>실질 수익률이 기준(X%)이 되는 가격. <b>가격이 선 이하면 ON</b>(가격이 낮을수록 수익률이 높으므로).</td><td>01 알람 박스·차트 초록 파선</td></tr>
-    <tr><td><b>손절 규칙</b></td><td>"환율 가정 4종 중 어느 경우라도 원화 실질이 기준(기본 4.5%) 미만이면 손절 구간". 한계 환율 = 실질이 정확히 기준이 되는 연 환율 변동.</td><td>01 손절 지표·02 손절 카드</td></tr>
+    <tr><td><b>손절 규칙</b></td><td>"환율 가정 4종 중 어느 경우라도 ${RT.kr}이 기준(기본 4.5%) 미만이면 손절 구간". 한계 환율 = 실질이 정확히 기준이 되는 연 환율 변동.</td><td>01 손절 지표·02 손절 카드</td></tr>
     <tr><td><b>손절 환율</b></td><td>평균 매수 환율(체결 날짜가 있으면, 없으면 현재 환율) × (1 + 한계 연 변동). 이 환율 아래로 가면 규칙 미달 구간.</td><td>02·03</td></tr>
     <tr><td><b>정합 기준</b></td><td>매수 기준 중 <b>손절 규칙을 만족하는 최소값</b>. 매수 기준이 이보다 낮으면 "⚠ 불일치"(그 가격에서 사면 최악 가정에서 규칙 미달).</td><td>01 알람 박스</td></tr>
     <tr><td><b>수익 소진 TARGET</b></td><td>헤알 실질이 기준(기본 6%)까지 줄어드는 가격. 고정 PU가 아니라 실질 기준이라 시간이 지나면 선이 올라갑니다.</td><td>01·02</td></tr>
@@ -1155,13 +1155,13 @@ const HELP = [
   {k: "t01", t: "01 최신변동 — 오늘의 상황판", h: `
     <p><b>의도</b> — 매일 아침 이 한 화면으로 "지금 무엇이 켜져 있고, 무엇을 해야 하는가"를 판단합니다.</p>
     <ul>
-    <li><b>매수 지표 박스</b> — 패널(① 헤알채 ② 달러채 ③ 5:5)별 ON/OFF, 현재가와 선의 거리, 수익 소진 TARGET 상태. 오른쪽 <b>기준 실질 입력칸</b>으로 기준을 바꾸면 매수선·ON/OFF·차트의 초록 파선·🔔 개수·02 탭 사다리가 같이 바뀝니다. "손절 규칙 정합 기준으로 맞춤"은 기준을 정합 기준 이상으로 올려 주고, "기본값"은 되돌립니다. 각 행 아래 줄은 <b>현재 현지 실질 → 원화 실질(환율 가정 4종의 최악·평균·최선)</b>과 <b>기준 실질에 매수했을 때의 원화 실질</b>을 보여 주고(손절 판단은 최악 값만, 평균은 4종 단순 평균이라 확률 가중 기대값이 아님), 아래 접이식 표 "현지 실질 → 원화 실질 환산"에 환율 가정별 값이 모두 나옵니다(원화 실질 = (1+현지 실질)×(1+현지 물가)÷(1+한국 물가)×(1+환율 연 변동)−1, 손절·정합 계산과 같은 식). 이 입력값은 <b>이 기기에만</b> 저장되며 서버 알림 기준(저장소 변수)은 따로입니다.</li>
+    <li><b>매수 지표 박스</b> — 패널(① 헤알채 ② 달러채 ③ 5:5)별 ON/OFF, 현재가와 선의 거리, 수익 소진 TARGET 상태. 오른쪽 <b>기준 실질 입력칸</b>으로 기준을 바꾸면 매수선·ON/OFF·차트의 초록 파선·🔔 개수·02 탭 사다리가 같이 바뀝니다. "손절 규칙 정합 기준으로 맞춤"은 기준을 정합 기준 이상으로 올려 주고, "기본값"은 되돌립니다. 각 행 아래 줄은 <b>현재 현지 실질 → ${RT.kr}(환율 가정 4종의 최악·평균·최선)</b>과 <b>기준 실질에 매수했을 때의 ${RT.kr}</b>을 보여 주고(손절 판단은 최악 값만, 평균은 4종 단순 평균이라 확률 가중 기대값이 아님), 아래 접이식 표 "현지 실질 → ${RT.kr} 환산"에 환율 가정별 값이 모두 나옵니다(${RT.kr} = (1+현지 실질)×(1+현지 물가)÷(1+한국 물가)×(1+환율 연 변동)−1, 손절·정합 계산과 같은 식). 이 입력값은 <b>이 기기에만</b> 저장되며 서버 알림 기준(저장소 변수)은 따로입니다.</li>
     <li><b>듀레이션·금리 민감도</b> — 세 패널에 수정 듀레이션과 "금리 +1%p / −1%p일 때 가격 변동률"을 보여 줍니다. 가격 변동은 현재 YTM에서 정확히 다시 평가한 값(볼록성 포함)이고, ③은 두 구성이 같은 폭으로 움직이는 평행 이동의 50:50 평균입니다. 달러채는 오늘 기준 현재 추정 YTM으로 계산합니다. 04-1 달러채 표의 듀레이션도 입력 시세 기준일의 값을 직접 계산한 것이며(수동 입력 듀레이션은 계산 실패 때만 대체), 시세를 갱신하면 따로 고치지 않아도 됩니다.</li>
     <li><b>시장 기준 실질</b> — ① 행 끝에 IPCA+ 2032 금리를 시장 기준 실질로 병기하고 시장 손익분기 물가(PF32 대 IPCA+ 2032)를 설문(Focus)과 비교합니다. 설문 기준 실질이 시장 기준보다 높게 나오면 그만큼 낙관적일 수 있다는 뜻이며, 규칙(매수선·손절)은 설문 기준을 씁니다.</li>
-    <li><b>손절 지표 박스</b> — 환율 가정 4종 최악에서 원화 실질이 기준 미만인지(⚠/✔), 그리고 한계 환율·손절 환율. 기준(기본 4.5%)은 입력칸으로 수정합니다.</li>
+    <li><b>손절 지표 박스</b> — 환율 가정 4종 최악에서 ${RT.kr}이 기준 미만인지(⚠/✔), 그리고 한계 환율·손절 환율. 기준(기본 4.5%)은 입력칸으로 수정합니다.</li>
     <li><b>체결 알림</b> — 02 탭의 다음 단계 지정가에 닿았는지.</li>
-    <li><b>통화 경고와 환율 반영 비교표</b> — 패널의 YTM은 통화가 달라 직접 비교할 수 없음을 알리고, 환율 가정별 원화 실질을 나란히 보여 줍니다.</li>
-    <li><b>세 패널</b> — 큰 숫자(가격), YTM, 실질 YTM(현지통화 기준), 환율, 원화 평가 변동(가격×환율), 이중축 차트(가격 좌축, 명목 YTM 회색, 실질 YTM 점선, 초록 파선=매수선, 적색 점선=실질 4.5% 가격선, 점선=지정가). 아래 <b>막대 그래프</b>는 환율 가정별 원화 실질(◎=현재 환율 유지, 빨간 세로선=손절선, 막대 옆 숫자=1년 뒤 환율).</li>
+    <li><b>통화 경고와 환율 반영 비교표</b> — 패널의 YTM은 통화가 달라 직접 비교할 수 없음을 알리고, 환율 가정별 ${RT.kr}을 나란히 보여 줍니다.</li>
+    <li><b>세 패널</b> — 큰 숫자(가격), YTM, 실질 YTM(현지통화 기준), 환율, 원화 평가 변동(가격×환율), 이중축 차트(가격 좌축, 명목 YTM 회색, 실질 YTM 점선, 초록 파선=매수선, 적색 점선=실질 4.5% 가격선, 점선=지정가). 아래 <b>막대 그래프</b>는 환율 가정별 ${RT.kr}(◎=현재 환율 유지, 빨간 세로선=손절선, 막대 옆 숫자=1년 뒤 환율).</li>
     <li><b>달러채 패널은 "추정"입니다</b> — 수동 입력 시세에 입력일 이후의 미 국채 금리 변동만 반영하고 가산금리는 고정합니다. 실제 호가와 다를 수 있습니다.</li>
     <li><b>하단 표</b> — 추적 종목(PF32, PF29, JS37, Selic)의 직전 대비 변화.</li></ul>
     <p class=note>"전일 대비"는 패널마다 비교 기준일이 다릅니다(국채 CSV 직전일 / 직전 미 국채 영업일). 각 항목에 날짜를 표시했습니다.</p>`},
@@ -1171,7 +1171,7 @@ const HELP = [
     <li><b>단계 막대와 알림</b> — 체결 여부, 다음 미체결 단계의 지정가까지 남은 거리. 지정가 이하가 되면 "체결 조건 충족". 손절 환율 3% 이내로 근접하면 경고 박스.</li>
     <li><b>현재 평균(체결분)</b> — 실제로 체결한 단계만의 가중평균. 체결이 없으면 "—"입니다.</li>
     <li><b>전 단계 체결 시 예상 평균(가정)</b> — 아직 체결하지 않은 단계가 모두 <b>지정가에 체결된다고 가정</b>했을 때의 평균입니다. 실제 평균이 아닙니다.</li>
-    <li><b>손절 기준 · 원화 실질</b> — 01 손절 지표의 PF32 요약과 손절 환율.</li>
+    <li><b>손절 기준 ·</b> ${RT.kr} — 01 손절 지표의 PF32 요약과 손절 환율.</li>
     <li><b>수익 소진 TARGET</b> — 실질 기준 입력칸. 헤알 실질이 이 값으로 줄어드는 PU 선과 현재가·평균 대비 거리.</li>
     <li><b>매수 사다리 제안</b> — 현 지정가·매수 기준선·손절 규칙 정합선의 PU, 현재 대비, 금리 상승폭, 실질, 손절 규칙 충족 여부, 과거 도달 빈도. 아래 버튼은 첫 미체결 단계를 이 가격들로 균등 분할합니다(확인 창 후 이 기기 설정에만 반영).</li>
     <li><b>만기 금액 계산</b> — 입력한 투자금(04-1 이자 계산·05와 공유)을 현재가·매수 기준선·정합선·사다리 평균에서 샀을 때의 <b>만기 수령액(BRL)</b>과 환율 가정별 <b>만기 원화</b>, 연 수익률, 현재 구매력 환산. PF32는 <b>이자가 없고 수익 전부가 할인차액</b>(만기 1,000 − 매수 PU)이라 쿠폰과 구분할 필요가 없습니다. 세전·수수료 미반영.</li></ul>
@@ -1179,7 +1179,7 @@ const HELP = [
   {k: "t03", t: "03 환율 — BRL/KRW", h: `
     <p><b>의도</b> — 헤알채의 원화 수익은 환율이 좌우합니다. 환율이 어느 수준에서 손익분기가 되는지, 손절 환율은 어디인지 한눈에 봅니다.</p>
     <ul><li><b>상단 위치바</b> — 현재 환율과 10년 범위.</li>
-    <li><b>핵심 박스</b> — 원화 실질 손익분기 환율(그 아래로 가면 물가를 뺀 구매력이 줄어듦)과 손절 환율.</li>
+    <li><b>핵심 박스</b> — ${RT.kr} 손익분기 환율(그 아래로 가면 물가를 뺀 구매력이 줄어듦)과 손절 환율.</li>
     <li><b>실질수익률 표</b> — 헤알·원·달러 기준 실질(물가 가정은 자동 수집값과 출처를 표시).</li>
     <li><b>환율 표</b> — 환율별 총수익·실질. 손익분기·손절 환율·현재 환율 행이 강조됩니다.</li></ul>
     <p class=note>환율은 ECB 기준이라 주말·휴일에는 날짜가 그대로이고 하루 정도 지연됩니다.</p>`},
@@ -1187,12 +1187,12 @@ const HELP = [
     <p><b>의도</b> — "결과가 이렇게 나오면 어떤 선택이 유리한가"를 숫자로 비교합니다(결선 같은 큰 이벤트 대비).</p>
     <ul><li><b>04-1 정치·재정 시나리오</b> — 우파 승리/룰라 재선 등 4개 시나리오의 확률·금리·환율·가산금리 <b>가정</b>(접이식 "가정 수정"에서 직접 입력). 결과는 PF32(고정) vs Selic vs IPCA+의 12개월 손익, 시나리오별 최선 종목, 분할 방식 제안, 가격·만기수익률 예측, 금리·환율 민감도. 확인 후 매수 가정(결과 확인 뒤 진입, 충격은 매수가에 이미 반영).</li>
     <li><b>달러표시 브라질 국채 비교와 이자 계산</b> — 수동 입력 시세(5종)로 PF32와 비교. 시세가 3일 넘으면 경고가 뜹니다. 이자(배당)는 달러채만 발생합니다(PF32는 제로쿠폰).</li>
-    <li><b>04-2 헤알채 vs 달러채</b> — 환율 가정별(기본값은 최근 5년 실제 환율에서 계산) 원화 실질 만기수익률. 환율 가정은 입력칸으로 수정, "기본값으로"로 되돌립니다. 아래에 가정별 과거 발생 구간과 3국 정권·주요 이벤트 표(인과관계를 단정할 수 없음).</li></ul>
+    <li><b>04-2 헤알채 vs 달러채</b> — 환율 가정별(기본값은 최근 5년 실제 환율에서 계산) ${RT.kr} 만기수익률. 환율 가정은 입력칸으로 수정, "기본값으로"로 되돌립니다. 아래에 가정별 과거 발생 구간과 3국 정권·주요 이벤트 표(인과관계를 단정할 수 없음).</li></ul>
     <p class=note>시나리오 확률과 환율·금리 반응은 <b>예측이 아니라 입력 가정</b>입니다. 모든 가정의 단일 출처는 이 탭입니다.</p>`},
   {k: "t05", t: "05 헤알·달러·5:5 비교 — 세 구성의 요약", h: `
     <p><b>의도</b> — 04의 가정과 계산을 그대로 모아 <b>헤알채 100% / 5:5 / 달러채 100%</b>를 나란히 비교합니다(새 계산 없음, 04와 숫자가 일치해야 함).</p>
     <ul><li><b>① 정치·재정 시나리오별</b>(04-1) — 시나리오별 12개월 원화 수익, EV, 실질, 최악·최선 폭, 투자금 기준 EV 손익. 진입 후 환율을 고정하므로 PF32의 환위험은 드러나지 않습니다.</li>
-    <li><b>② 환율 가정별</b>(04-2) — 만기 보유 연율 원화 실질. 5:5가 "헤알 약세 보험료(EV 일부 포기)로 하방을 방어하는 구조"임을 보여 줍니다.</li></ul>`},
+    <li><b>② 환율 가정별</b>(04-2) — 만기 보유 연율 ${RT.kr}. 5:5가 "헤알 약세 보험료(EV 일부 포기)로 하방을 방어하는 구조"임을 보여 줍니다.</li></ul>`},
   {k: "t06", t: "06 국채 전체 — Tesouro 상품 목록", h: `
     <p><b>의도</b> — 같은 기준일의 Tesouro Direto 전체 상품 가격·수익률을 확인하고, 추적 종목(PF32 등)을 맨 위에서 비교합니다. 검색창으로 종목을 찾습니다.</p>
     <p class=note>가격은 Investir CSV(매수 쪽 가격) 기준입니다. 직접 올린 CSV(상단 📂)가 더 최신이면 그것을 씁니다.</p>`},
@@ -1250,7 +1250,7 @@ const HELP = [
     <tr><td>"⚠ 손절 규칙과 불일치"</td><td>매수 기준이 정합 기준보다 낮다는 뜻입니다. "정합 기준으로 맞춤"을 누르거나 의도한 것이라면 그대로 두세요.</td></tr>
     <tr><td>매수 신호가 계속 OFF</td><td>매수선까지 금리가 상승(가격 하락)해야 켜집니다. 02 탭의 과거 도달 빈도를 참고하세요.</td></tr></tbody></table></div>`},
   {k: "decisions", t: "설계 결정 기록 — 왜 이렇게 만들었나", h: `
-    <ul><li><b>가격 STOP 폐지</b> → 원화 실질 손절 규칙. 고정 가격은 일상 변동 안에 있거나 매수선과 충돌했고 매도가 괴리도 있었습니다.</li>
+    <ul><li><b>가격 STOP 폐지</b> → ${RT.kr} 손절 규칙. 고정 가격은 일상 변동 안에 있거나 매수선과 충돌했고 매도가 괴리도 있었습니다.</li>
     <li><b>고정 TARGET 가격 폐지</b> → 실질 기준. 제로쿠폰은 시간이 지나면 가격이 오르므로 같은 PU가 다른 수익률을 뜻합니다.</li>
     <li><b>가정의 단일화</b> — 시나리오 확률은 04-1, 환율 가정은 04-2가 단일 출처이고 05는 그대로 집계합니다. 서로 다른 시나리오 체계가 충돌하던 문제를 정리했습니다.</li>
     <li><b>물가는 항상 자동</b> — 기기에 남은 옛 입력값이 조용히 덮어쓰는 문제를 막기 위함.</li>
