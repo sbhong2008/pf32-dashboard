@@ -129,6 +129,8 @@ const rtTag = (c, t, tip) => `<span class="rt rt-${c}" title="${tip}">${t}</span
 const RT = {n: rtTag("n", "명목", "명목 수익률 — 현지통화 기준, 물가·환율 보정 없음"), r: rtTag("r", "실질", "실질 수익률 — 현지통화 기준, 물가만 보정(환율 미반영)"),
   kn: rtTag("kn", "원화 명목", "원화 명목 — 환율 반영, 물가 보정 없음"), kr: rtTag("kr", "원화 실질", "원화 실질 — 환율 반영 후 한국 물가 보정")};
 const RK = {w: '<span class="rk rk-w">최악</span>', a: '<span class="rk rk-a">평균</span>', b: '<span class="rk rk-b">최선</span>'};   // 환율 가정 4종 최악(빨강)·평균(회색)·최선(초록)
+const RKP = (k, p) => { const key = {w: "lo", a: "av", b: "hi"}[k], lab = {w: "최악", a: "평균", b: "최선"}[k]; if (!p) return RK[k];
+  return `<span class="rk rk-${k}" title="과거 1년 환율 변동(전체 약 ${f2(p[0].n / 52, 0)}년 ${f2(p[0][key], 0)}% · 최근 5년 ${f2(p[1][key], 0)}%) 중 원화 실질이 이 값 ${k === "w" ? "이하" : "이상"}으로 나온 비율">${lab} ${f2(p[0][key], 0)}%</span>`; };
 const rtLegend = () => `<div class="rtleg">수익률 표기 — ${RT.n} 현지통화·물가·환율 미보정 · ${RT.r} 현지통화·물가 보정(환율 미반영) · ${RT.kn} 환율 반영·물가 미보정 · ${RT.kr} 환율 반영 + 한국 물가 보정</div>`;
 const rtBond = s => /IPCA|Renda\+|Educa\+/i.test(s) ? RT.r : RT.n;   // IPCA+ 계열의 '수익률'은 물가에 더해지는 실질금리
 const pct = (n, d = 2) => n == null || isNaN(n) ? "—" : (n >= 0 ? "+" : "") + f2(n, d) + "%";
@@ -640,8 +642,18 @@ function krwAt(m) {   // 현지 실질 → 원화 실질 환산(환율 가정 4�
   const sg = buySignals(m), kN = INF().kr, cs = stopCases(), ann = (y, g) => ((1 + y / 100) * (1 + g / 100) - 1) * 100;
   const at = (j, yb, yu) => cs.map(([gb, gu]) => { const a = ann(yb, gb), b = ann(yu, gu); return real(j === 0 ? a : j === 1 ? b : (a + b) / 2, kN); });
   const y1 = ((1 + BR(0) / 100) * (1 + sg.brI / 100) - 1) * 100, y2 = ((1 + BR(1) / 100) * (1 + sg.kr.us / 100) - 1) * 100;   // 기준 실질에 해당하는 명목 YTM
-  return {names: ["환율 불변", "5년 연평균", "헤알 약세", "원화 강세형(헤알·달러 동반 약세)"], g: cs, local: {now: [sg.realPf, sg.realU, sg.realMix], at: [BR(0), BR(1), BR(2)]},
-    now: [0, 1, 2].map(j => at(j, m.ytm, sg.yU)), at: [at(0, y1, sg.yU), at(1, m.ytm, y2), at(2, m.ytm + sg.dMix, sg.yU + sg.dMix)]};
+  const now = [0, 1, 2].map(j => at(j, m.ytm, sg.yU)), atK = [at(0, y1, sg.yU), at(1, m.ytm, y2), at(2, m.ytm + sg.dMix, sg.yU + sg.dMix)];
+  // 과거 빈도: 주 1회 표본의 롤링 1년 환율 변화(헤알·달러, update.py fx_stats.roll)를 그대로 적용했을 때 원화 실질이 최악 값 이하·평균 이상·최선 이상으로 나온 비율(%) — [전체, 최근 5년]
+  const R = D.fx_stats && D.fx_stats.roll && D.fx_stats.roll.length ? D.fx_stats.roll : null;
+  let p = null;
+  if (R) {
+    const cut = new Date(new Date(R.at(-1)[2]).getTime() - 5 * 365.25 * 864e5).toISOString().slice(0, 10), R5 = R.filter(r => r[2] >= cut);
+    const outs = (RR, j, yb, yu) => RR.map(([b, u]) => { const a = ann(yb, b), c = ann(yu, u); return real(j === 0 ? a : j === 1 ? c : (a + c) / 2, kN); });
+    const one = (j, yb, yu, v) => { const lo = Math.min(...v), av = v.reduce((x, y) => x + y, 0) / v.length, hi = Math.max(...v);
+      return [R, R5].map(RR => { const o = outs(RR, j, yb, yu), sh = f => o.filter(f).length / o.length * 100; return {lo: sh(x => x <= lo + 1e-9), av: sh(x => x >= av), hi: sh(x => x >= hi - 1e-9), n: o.length}; }); };
+    p = {now: [0, 1, 2].map(j => one(j, m.ytm, sg.yU, now[j])), at: [one(0, y1, sg.yU, atK[0]), one(1, m.ytm, y2, atK[1]), one(2, m.ytm + sg.dMix, sg.yU + sg.dMix, atK[2])]};
+  }
+  return {names: ["환율 불변", "5년 연평균", "헤알 약세", "원화 강세형(헤알·달러 동반 약세)"], g: cs, local: {now: [sg.realPf, sg.realU, sg.realMix], at: [BR(0), BR(1), BR(2)]}, now, at: atK, p};
 }
 function buyAlign() {   // 현재 매수 기준이 정합 기준보다 느슨하면 정합 기준(소수 1자리 올림)으로 올림 — 이미 더 엄격하면 유지
   const cb = consistentBuy(model()); if (!C.buy_real) C.buy_real = [BUY_DEF, BUY_DEF, BUY_DEF];
@@ -794,16 +806,16 @@ V.overview = m => {
       const sigHtml = `<div class="callout ${anyOn ? "go" : "sum"}"><b>${anyOn ? "🔔" : "⏳"} 매수 지표 — 실질 수익률 기준 가격선</b> ${RT.r} <small>(가격이 선 이하 = 실질 YTM ≥ 기준 → ON · 헤알 기준·달러 기준, 환율 위험 미반영)</small>
         ${sigRows.map((r, j) => `<div style="margin-top:5px;display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px">${badge(r[1], r[2])} <span style="flex:1;min-width:230px"><b>${r[0]}</b> · ${r[3]}</span>
           <label class=noprint style="font-size:11px;white-space:nowrap">기준 실질 <input type=number step=0.5 min=-5 max=30 value="${BR(j)}" data-j="${j}" onchange="buyEdit(this)" style="width:62px;text-align:right;padding:2px 4px">%</label>
-          <div style="flex-basis:100%;font-size:11px;padding-left:2px;${loose[j] ? "color:var(--bad);font-weight:700" : ""}">${loose[j] ? "⚠" : "✔"} 기준 ${f2(BR(j), 1)}%에 매수하면 ${RT.kr} ${RK.w} <b>${pct(st4(kz.at[j]).lo, 2)}</b> ${st4(kz.at[j]).lo >= SR() ? "≥" : "<"} 손절 ${f2(SR(), 1)}% <span style="font-weight:400">· ${RK.a} ${pct(st4(kz.at[j]).av, 2)} · ${RK.b} ${pct(st4(kz.at[j]).hi, 2)}</span></div>
-          <div style="flex-basis:100%;font-size:11px;padding-left:2px">현재 현지 실질 ${pct(kz.local.now[j], 2)} → ${RT.kr} ${RK.w} ${pct(st4(kz.now[j]).lo, 2)} · ${RK.a} ${pct(st4(kz.now[j]).av, 2)} · ${RK.b} ${pct(st4(kz.now[j]).hi, 2)} · 정합 기준 실질 ≥ ${consTxt[j]}</div>${zl(j, r[1])}</div>`).join("")}
+          <div style="flex-basis:100%;font-size:11px;padding-left:2px;${loose[j] ? "color:var(--bad);font-weight:700" : ""}">${loose[j] ? "⚠" : "✔"} 기준 ${f2(BR(j), 1)}%에 매수하면 ${RT.kr} ${RKP("w", kz.p && kz.p.at[j])} <b>${pct(st4(kz.at[j]).lo, 2)}</b> ${st4(kz.at[j]).lo >= SR() ? "≥" : "<"} 손절 ${f2(SR(), 1)}% <span style="font-weight:400">· ${RKP("a", kz.p && kz.p.at[j])} ${pct(st4(kz.at[j]).av, 2)} · ${RKP("b", kz.p && kz.p.at[j])} ${pct(st4(kz.at[j]).hi, 2)}</span></div>
+          <div style="flex-basis:100%;font-size:11px;padding-left:2px">현재 현지 실질 ${pct(kz.local.now[j], 2)} → ${RT.kr} ${RKP("w", kz.p && kz.p.now[j])} ${pct(st4(kz.now[j]).lo, 2)} · ${RKP("a", kz.p && kz.p.now[j])} ${pct(st4(kz.now[j]).av, 2)} · ${RKP("b", kz.p && kz.p.now[j])} ${pct(st4(kz.now[j]).hi, 2)} · 정합 기준 실질 ≥ ${consTxt[j]}</div>${zl(j, r[1])}</div>`).join("")}
         ${tgtHtml}
-        ${(() => { const cell = v => `<span class="${v < SR() ? "neg" : ""}">${pct(v, 2)}</span>`, w = a => Math.min(...a);
+        ${(() => { const cell = v => `<span class="${v < SR() ? "neg" : ""}">${pct(v, 2)}</span>`, w = a => Math.min(...a), pp = (p, k) => p ? `<br><small style="opacity:.75">${f2(p[0][k], 0)}% / ${f2(p[1][k], 0)}%</small>` : "";
           return `<details class=fold ${krwOpen ? "open" : ""} ontoggle="krwOpen=this.open" style="margin-top:8px"><summary>현지 실질 → ${RT.kr} 환산 — 환율 가정별 (펼치기)</summary><div><div class=tbl><table class=mono><thead><tr><th rowspan=2>환율 가정<br><small>연 변동 헤알 / 달러</small></th>${["① 헤알채", "② 달러채", "③ 5:5"].map(n => `<th class=r colspan=2>${n}</th>`).join("")}</tr><tr>${[0, 1, 2].map(j => `<th class=r><small>현재<br>현지 ${pct(kz.local.now[j], 2)}</small></th><th class=r><small>기준<br>현지 ${f2(kz.local.at[j], 1)}%</small></th>`).join("")}</tr></thead><tbody>
           ${kz.names.map((n, i) => `<tr><td>${n}<br><small>${pct(kz.g[i][0], 1)} / ${pct(kz.g[i][1], 1)}</small></td>${[0, 1, 2].map(j => `<td class=r>${cell(kz.now[j][i])}</td><td class=r>${cell(kz.at[j][i])}</td>`).join("")}</tr>`).join("")}
-          <tr style="font-weight:700"><td>${RK.w} ${RT.kr}</td>${[0, 1, 2].map(j => `<td class=r>${cell(w(kz.now[j]))}</td><td class=r>${cell(w(kz.at[j]))}</td>`).join("")}</tr>
-          <tr><td>${RK.a} <small>4종 단순</small></td>${[0, 1, 2].map(j => `<td class=r>${pct(st4(kz.now[j]).av, 2)}</td><td class=r>${pct(st4(kz.at[j]).av, 2)}</td>`).join("")}</tr>
-          <tr><td>${RK.b}</td>${[0, 1, 2].map(j => `<td class=r>${pct(st4(kz.now[j]).hi, 2)}</td><td class=r>${pct(st4(kz.at[j]).hi, 2)}</td>`).join("")}</tr></tbody></table></div>
-          <div class=note>${RT.r}→${RT.kr} 환산: 원화 실질 = (1+현지 실질) × (1+현지 물가) ÷ (1+한국 물가 ${f2(kr.kr)}%) × (1+환율 연 변동) − 1 (③은 두 구성의 연 원화 수익 평균에서 한국 물가 차감). <b>현재</b> = 오늘 YTM·가격 그대로, <b>기준</b> = 기준 실질 입력값에 도달했을 때(그 가격에 매수했을 때). 빨간 값 = 손절 기준 ${f2(SR(), 1)}% 미만. 환율 가정은 04-2와 같고 예측이 아닙니다. 위 매수 지표 행의 최악·평균·최선은 이 표의 같은 이름 행과 같은 값입니다. 평균은 환율 가정 4종의 <b>단순 평균</b>(가정별 확률은 정해져 있지 않음)이라 기대값이 아니라 범위를 가늠하는 참고치이고, 손절 판단은 최악 값으로만 합니다.</div></div></details>`; })()}
+          <tr style="font-weight:700"><td>${RK.w} ${RT.kr}</td>${[0, 1, 2].map(j => `<td class=r>${cell(w(kz.now[j]))}${pp(kz.p && kz.p.now[j], "lo")}</td><td class=r>${cell(w(kz.at[j]))}${pp(kz.p && kz.p.at[j], "lo")}</td>`).join("")}</tr>
+          <tr><td>${RK.a} <small>4종 단순</small></td>${[0, 1, 2].map(j => `<td class=r>${pct(st4(kz.now[j]).av, 2)}${pp(kz.p && kz.p.now[j], "av")}</td><td class=r>${pct(st4(kz.at[j]).av, 2)}${pp(kz.p && kz.p.at[j], "av")}</td>`).join("")}</tr>
+          <tr><td>${RK.b}</td>${[0, 1, 2].map(j => `<td class=r>${pct(st4(kz.now[j]).hi, 2)}${pp(kz.p && kz.p.now[j], "hi")}</td><td class=r>${pct(st4(kz.at[j]).hi, 2)}${pp(kz.p && kz.p.at[j], "hi")}</td>`).join("")}</tr></tbody></table></div>
+          <div class=note>${RT.r}→${RT.kr} 환산: 원화 실질 = (1+현지 실질) × (1+현지 물가) ÷ (1+한국 물가 ${f2(kr.kr)}%) × (1+환율 연 변동) − 1 (③은 두 구성의 연 원화 수익 평균에서 한국 물가 차감). <b>현재</b> = 오늘 YTM·가격 그대로, <b>기준</b> = 기준 실질 입력값에 도달했을 때(그 가격에 매수했을 때). 빨간 값 = 손절 기준 ${f2(SR(), 1)}% 미만. 환율 가정은 04-2와 같고 예측이 아닙니다. 위 매수 지표 행의 최악·평균·최선은 이 표의 같은 이름 행과 같은 값입니다. 평균은 환율 가정 4종의 <b>단순 평균</b>이라 기대값이 아니라 범위를 가늠하는 참고치이고, 손절 판단은 최악 값으로만 합니다. <b>박스·표의 %는 과거 빈도</b>: 주 1회 표본의 과거 롤링 1년 환율 변화(헤알·달러)를 그대로 적용했을 때 원화 실질이 <b>최악 값 이하 · 평균 값 이상 · 최선 값 이상</b>으로 나온 비율이고, 표에는 <b>전체(약 9년) / 최근 5년</b> 순서로 적었습니다(박스에는 전체). 구간이 겹치는 표본이라 독립 사건 수는 훨씬 적고, 과거 빈도는 미래 확률이 아닙니다.</div></div></details>`; })()}
         <div class=noprint style="margin-top:6px"><button onclick="buyAlign()" style="font-size:11px;padding:2px 8px;font-weight:700">손절 규칙 정합 기준으로 맞춤</button> <button onclick="buyReset()" style="font-size:11px;padding:2px 8px">기본값(${BUY_DEF}% · 손절 ${STOP_DEF}%)으로</button> <small>입력값은 이 기기에 저장됩니다. 기준을 올리면 가격선이 내려가 매수 조건이 엄격해집니다.</small></div></div>${stopHtml}`;
       const dp_ = durPanels(m);
       const kv = (k, v, sub) => `<div class=kvr><span>${k}</span><b class=mono>${v}${sub ? `<small>${sub}</small>` : ""}</b></div>`;
@@ -1161,7 +1173,7 @@ const HELP = [
   {k: "t01", t: "01 최신변동 — 오늘의 상황판", h: `
     <p><b>의도</b> — 매일 아침 이 한 화면으로 "지금 무엇이 켜져 있고, 무엇을 해야 하는가"를 판단합니다.</p>
     <ul>
-    <li><b>매수 지표 박스</b> — 패널(① 헤알채 ② 달러채 ③ 5:5)별 ON/OFF, 현재가와 선의 거리, 수익 소진 TARGET 상태. 오른쪽 <b>기준 실질 입력칸</b>으로 기준을 바꾸면 매수선·ON/OFF·차트의 초록 파선·🔔 개수·02 탭 사다리가 같이 바뀝니다. "손절 규칙 정합 기준으로 맞춤"은 기준을 정합 기준 이상으로 올려 주고, "기본값"은 되돌립니다. 각 행 아래 줄은 <b>현재 현지 실질 → ${RT.kr}(환율 가정 4종의 최악·평균·최선)</b>과 <b>기준 실질에 매수했을 때의 ${RT.kr}</b>을 보여 주고(손절 판단은 최악 값만, 평균은 4종 단순 평균이라 확률 가중 기대값이 아님), 아래 접이식 표 "현지 실질 → ${RT.kr} 환산"에 환율 가정별 값이 모두 나옵니다(${RT.kr} = (1+현지 실질)×(1+현지 물가)÷(1+한국 물가)×(1+환율 연 변동)−1, 손절·정합 계산과 같은 식). 이 입력값은 <b>이 기기에만</b> 저장되며 서버 알림 기준(저장소 변수)은 따로입니다.</li>
+    <li><b>매수 지표 박스</b> — 패널(① 헤알채 ② 달러채 ③ 5:5)별 ON/OFF, 현재가와 선의 거리, 수익 소진 TARGET 상태. 오른쪽 <b>기준 실질 입력칸</b>으로 기준을 바꾸면 매수선·ON/OFF·차트의 초록 파선·🔔 개수·02 탭 사다리가 같이 바뀝니다. "손절 규칙 정합 기준으로 맞춤"은 기준을 정합 기준 이상으로 올려 주고, "기본값"은 되돌립니다. 각 행 아래 줄은 <b>현재 현지 실질 → ${RT.kr}(환율 가정 4종의 최악·평균·최선)</b>과 <b>기준 실질에 매수했을 때의 ${RT.kr}</b>을 보여 주고(손절 판단은 최악 값만, 평균은 4종 단순 평균이라 확률 가중 기대값이 아님). 박스 안의 %는 <b>과거 빈도</b>입니다 — 과거 약 9년(주 1회 표본)의 롤링 1년 환율 변화를 그대로 적용했을 때 원화 실질이 최악 값 <b>이하</b>, 평균 값 <b>이상</b>, 최선 값 <b>이상</b>으로 나온 비율(박스는 전체 기간, 마우스를 올리면 최근 5년, 접이식 표에는 전체 / 최근 5년). 구간이 겹쳐 독립 사건 수가 적고 미래 확률이 아니며, 04-2의 '발생빈도'(5개 가정 중 가장 가까운 것에 배정)와는 정의가 다릅니다, 아래 접이식 표 "현지 실질 → ${RT.kr} 환산"에 환율 가정별 값이 모두 나옵니다(${RT.kr} = (1+현지 실질)×(1+현지 물가)÷(1+한국 물가)×(1+환율 연 변동)−1, 손절·정합 계산과 같은 식). 이 입력값은 <b>이 기기에만</b> 저장되며 서버 알림 기준(저장소 변수)은 따로입니다.</li>
     <li><b>듀레이션·금리 민감도</b> — 세 패널에 수정 듀레이션과 "금리 +1%p / −1%p일 때 가격 변동률"을 보여 줍니다. 가격 변동은 현재 YTM에서 정확히 다시 평가한 값(볼록성 포함)이고, ③은 두 구성이 같은 폭으로 움직이는 평행 이동의 50:50 평균입니다. 달러채는 오늘 기준 현재 추정 YTM으로 계산합니다. 04-1 달러채 표의 듀레이션도 입력 시세 기준일의 값을 직접 계산한 것이며(수동 입력 듀레이션은 계산 실패 때만 대체), 시세를 갱신하면 따로 고치지 않아도 됩니다.</li>
     <li><b>시장 기준 실질</b> — ① 행 끝에 IPCA+ 2032 금리를 시장 기준 실질로 병기하고 시장 손익분기 물가(PF32 대 IPCA+ 2032)를 설문(Focus)과 비교합니다. 설문 기준 실질이 시장 기준보다 높게 나오면 그만큼 낙관적일 수 있다는 뜻이며, 규칙(매수선·손절)은 설문 기준을 씁니다.</li>
     <li><b>손절 지표 박스</b> — 환율 가정 4종 최악에서 ${RT.kr}이 기준 미만인지(⚠/✔), 그리고 한계 환율·손절 환율. 기준(기본 4.5%)은 입력칸으로 수정합니다.</li>
