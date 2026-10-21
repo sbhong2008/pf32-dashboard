@@ -638,6 +638,29 @@ function consistentBuy(m) {   // 손절 규칙(환율 가정 4종 중 최악의 
   return {sg, d, req: [real(m.ytm + d[0], sg.brI), real(sg.yU + d[1], sg.kr.us), (real(m.ytm + d[2], sg.brI) + real(sg.yU + d[2], sg.kr.us)) / 2],
     line: [sg.pf(m.ytm + d[0]), sg.us(sg.yU + d[1]), null]};
 }
+// ---------- 내 보유(설정 탭 pos): 매수가·투자금·매수일(환율은 그날 값 자동, 직접 입력 우선)로 01 탭 원화 평가손익 ----------
+const posIso = d => { const t = (d || "").trim(); if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return t; const q = t.match(/^(\d{1,2})\/(\d{1,2})$/); return q ? `${new Date(D.generated).getFullYear()}-${String(q[1]).padStart(2, "0")}-${String(q[2]).padStart(2, "0")}` : null; };
+function posPnL(m) {
+  const P = C.pos || {}, num = v => (typeof v === "number" && v > 0 ? v : 0), rows = [];
+  const brlAt = iso => { const r = iso ? [...D.fx.series].reverse().find(q => q[0] <= iso) : null; return r ? r[1] : null; };
+  const usdAt = iso => { const b = brlAt(iso), u = iso && D.fx_usd && D.fx_usd.series ? [...D.fx_usd.series].reverse().find(q => q[0] <= iso) : null; return b && u && (Date.parse(iso) - Date.parse(u[0])) < 10 * 864e5 ? b / u[1] : null; };
+  const mk = (key, name, px, amt, p1, fx0, fx1, note, ext) => { const cost = amt * 1e4, ratio = p1 / px, value = cost * ratio * (fx1 / fx0); rows.push({key, name, px, p1, fx0, fx1, cost, value, pnl: value - cost, pct: (value / cost - 1) * 100, pricePnl: cost * (ratio - 1), fxPnl: cost * ratio * (fx1 / fx0 - 1), note, ext}); };
+  const a = P.pf || {};
+  if (num(a.px) && num(a.amt)) { const iso = posIso(a.date), fx0 = num(a.fx) || brlAt(iso); mk("pf", C.tracked.label, a.px, a.amt, m.price, fx0 || m.fx, m.fx, num(a.fx) ? "입력 환율" : fx0 ? iso + " 환율" : "매수 환율 없음 → 현재 환율(환율 손익 0)"); }
+  const b = P.usd || {}, L = C.usd_bonds && C.usd_bonds.length ? C.usd_bonds : USD_DEF, bd = L.find(o => o.n === b.n) || L[Math.min(usdSel, L.length - 1)], uk = usdkrwNowPrev();
+  if (num(b.px) && num(b.amt) && uk) { const iso = posIso(b.date), fx0 = num(b.fx) || usdAt(iso), u = usdEst(m, bd); mk("usd", bd.n.replace("Brazil ", "BRAZ "), b.px, b.amt, u.ok ? u.last.p : bd.px, fx0 || uk.now, uk.now, num(b.fx) ? "입력 환율" : fx0 ? iso + " 환율" : "매수 환율 없음 → 현재 환율(환율 손익 0)", u.ok ? "시세 추정" : "입력 시세"); }
+  const tot = rows.length > 1 ? {cost: rows.reduce((x, r) => x + r.cost, 0), value: rows.reduce((x, r) => x + r.value, 0)} : null;
+  return {rows, tot};
+}
+function posBox(m) {
+  const {rows, tot} = posPnL(m); if (!rows.length) return "";
+  const mw = v => (v >= 0 ? "+" : "−") + f2(Math.abs(v) / 1e4, 0) + "만원", cls = v => v < 0 ? "neg" : "pos";
+  return `<div class="callout sum"><b>💼 내 보유 손익 (원화)</b> ${RT.kn} <small>(매수가·투자금·매수일은 설정 탭 · 이 기기에만 저장 · 세전·수수료 제외)</small>
+    ${rows.map(r => `<div style="margin-top:5px"><b>${r.key === "pf" ? "①" : "②"} ${r.name}</b> · 매수 ${f2(r.px)} → 현재 ${f2(r.p1)}${r.ext ? " <small>(" + r.ext + ")</small>" : ""} · 환율 ${f2(r.fx0, 1)} → ${f2(r.fx1, 1)} <small>(${r.note})</small><br>
+      투자 ${f2(r.cost / 1e4, 0)}만원 → 평가 ${f2(r.value / 1e4, 0)}만원 · 손익 <b class="${cls(r.pnl)}">${mw(r.pnl)} (${r.pct >= 0 ? "+" : "−"}${f2(Math.abs(r.pct), 2)}%)</b> <small>= 가격 <span class="${cls(r.pricePnl)}">${mw(r.pricePnl)}</span> + 환율 <span class="${cls(r.fxPnl)}">${mw(r.fxPnl)}</span></small></div>`).join("")}
+    ${tot ? `<div style="margin-top:5px;border-top:1px dotted var(--line);padding-top:4px"><b>합계</b> · 투자 ${f2(tot.cost / 1e4, 0)}만원 → 평가 ${f2(tot.value / 1e4, 0)}만원 · 손익 <b class="${cls(tot.value - tot.cost)}">${mw(tot.value - tot.cost)} (${tot.value >= tot.cost ? "+" : "−"}${f2(Math.abs(tot.value / tot.cost - 1) * 100, 2)}%)</b></div>` : ""}
+    <small>가격 손익 = 투자금 × (현재가 ÷ 매수가 − 1), 환율 손익 = 평가금액 × (현재 환율 ÷ 매수 환율 − 1)에 해당하는 분. 달러채는 수령한 이자·경과이자를 포함하지 않고 현재 가격은 입력 시세 이후 미 국채 금리 변동만 반영한 추정입니다. 구매력(실질) 손익은 아닙니다.</small></div>`;
+}
 function krwAt(m) {   // 현지 실질 → 원화 실질 환산(환율 가정 4종): 현재 값과 '기준 실질'에 도달했을 때의 값 — 손절·정합 계산(consistentBuy·stopStatus)과 같은 식
   const sg = buySignals(m), kN = INF().kr, cs = stopCases(), ann = (y, g) => ((1 + y / 100) * (1 + g / 100) - 1) * 100;
   const at = (j, yb, yu) => cs.map(([gb, gu]) => { const a = ann(yb, gb), b = ann(yu, gu); return real(j === 0 ? a : j === 1 ? b : (a + b) / 2, kN); });
@@ -701,8 +724,8 @@ function buySignals(m) {
 }
 // ---------- 01 탭 3패널용: 달러채 추정 시세 · USD/KRW · 5:5 합성 ----------
 // 달러채는 수동 입력 시세(USD_ASOF)를 기준으로, 입력일 이후 미 국채 금리 변동만 반영해 추정(가산금리 불변 가정)
-function usdEst(m) {
-  const L = C.usd_bonds && C.usd_bonds.length ? C.usd_bonds : USD_DEF, b = L[Math.min(usdSel, L.length - 1)], U = D.ust && D.ust.series;
+function usdEst(m, bsel) {
+  const L = C.usd_bonds && C.usd_bonds.length ? C.usd_bonds : USD_DEF, b = bsel || L[Math.min(usdSel, L.length - 1)], U = D.ust && D.ust.series;
   if (!U || U.length < 3) return {b, ok: false};
   const cols = D.ust.cols, T = Math.max(cols[0], (new Date(b.mat.replace(/\./g, "-")) - Date.now()) / (365.25 * 864e5));
   const yAt = r => { const t = Math.min(T, cols.at(-1)); let i = 0; while (i < cols.length - 2 && t > cols[i + 1]) i++; const w = (t - cols[i]) / (cols[i + 1] - cols[i]); return r[1 + i] + w * (r[2 + i] - r[1 + i]); };
@@ -825,7 +848,7 @@ V.overview = m => {
       const mixSer = u.ok ? u.series.filter(o => ymap.has(o.d)).map(o => (ymap.get(o.d) + o.y) / 2).slice(-60) : [];
       const uStale = typeof usdStale === "function" ? usdStale() : "";
       const dayc = dayChg(m, m.ytm, brI, m.before ? m.before[1] : null);
-      return `${sigHtml}${calHtml(m)}${nx ? `<div class="callout ${reached ? "go" : ""}" style="cursor:pointer" onclick="tab='stages';render()">${reached ? "🔔 <b>체결 조건 충족</b>" : "⏳ <b>대기</b>"} — ${m.next.name} 지정가 <b class=mono>${f2(m.next.price)}</b> · 현재 <b class=mono>${f2(m.price)}</b> · ${reached ? "지정가 이하 (02 분할매수에서 확인)" : f2(m.price - m.next.price) + " BRL 남음"}</div>` : ""}
+      return `${posBox(m)}${sigHtml}${calHtml(m)}${nx ? `<div class="callout ${reached ? "go" : ""}" style="cursor:pointer" onclick="tab='stages';render()">${reached ? "🔔 <b>체결 조건 충족</b>" : "⏳ <b>대기</b>"} — ${m.next.name} 지정가 <b class=mono>${f2(m.next.price)}</b> · 현재 <b class=mono>${f2(m.price)}</b> · ${reached ? "지정가 이하 (02 분할매수에서 확인)" : f2(m.price - m.next.price) + " BRL 남음"}</div>` : ""}
       <div class="callout sum"><b>⚠ 패널의 ${RT.n} YTM은 통화가 달라 직접 비교할 수 없습니다</b> — 헤알채 <span class=mono>${f2(m.ytm)}%</span>(BRL)와 달러채 <span class=mono>${f2(yU)}%</span>(USD)는 환율 위험이 빠진 값입니다. 격차 <b class=mono>${f2(m.ytm - yU)}%p</b>는 헤알 약세 위험의 대가로, 달러 환율이 그대로일 때 <b>헤알이 연 <span class=mono>${f2(-beBrl, 1)}%</span> 넘게 약해지면 달러채가 앞섭니다</b>${dnAvg != null ? ` (최근 5년 헤알 약세구간 평균 <span class=mono>${pct(dnAvg, 1)}</span>)` : ""}.
         <div class=tbl style="margin-top:6px"><table class=mono><thead><tr><th>환율 가정 <small>(진입 후 연 변동 헤알/달러)</small></th><th class=r>헤알채 PF32</th><th class=r>5:5</th><th class=r>달러채</th><th>최선</th></tr></thead><tbody>
         ${fxCmp.map(o => { const bi = o.v.indexOf(Math.max(...o.v)); return `<tr><td>${o.n} <small>(${pct(o.gb, 1)} / ${pct(o.gu, 1)})</small></td>${o.v.map((x, j) => `<td class=r${j === bi ? ' style="font-weight:700;background:var(--okbg)"' : ""}>${pct(x, 1)}</td>`).join("")}<td>${["헤알채", "5:5", "달러채"][bi]}</td></tr>`; }).join("")}</tbody></table></div>
@@ -1129,8 +1152,14 @@ V.bonds = m => {
 
 V.settings = m => {
   const st = C.stages.map((s, i) => `<tr><td>${s.name}</td><td><input type=number step=any data-k="stages.${i}.pct" value="${s.pct}"></td><td><input type=number step=any data-k="stages.${i}.price" value="${s.price}"></td><td><input data-k="stages.${i}.date" value="${s.date || ""}"></td><td><input type=checkbox data-k="stages.${i}.filled" ${s.filled ? "checked" : ""}></td><td><button class=noprint onclick="stageDel(${i})" title="이 단계 삭제" style="padding:2px 7px">✕</button></td></tr>`).join("");
-  return `<section><h2>설정 — 분할매수 (이 기기 브라우저에 저장)</h2><div class=body>
+  return `<section><h2>설정 — 분할매수·내 보유 (이 기기 브라우저에 저장)</h2><div class=body>
     <div class=tbl><table><thead><tr><th>단계</th><th>비중%</th><th>지정가/체결가</th><th>날짜</th><th>체결</th><th></th></tr></thead><tbody>${st}</tbody></table></div>
+    ${(() => { if (!C.pos) C.pos = {}; C.pos.pf = C.pos.pf || {}; C.pos.usd = C.pos.usd || {}; const L = C.usd_bonds && C.usd_bonds.length ? C.usd_bonds : USD_DEF, v = o => o == null ? "" : o, inp = (k, ph, t) => `<input ${t || "type=number step=any"} data-k="pos.${k}" value="${v(C.pos[k.split(".")[0]][k.split(".")[1]])}" placeholder="${ph}" style="width:100%">`;
+      return `<h3 style="margin:14px 0 4px;font-size:14px">내 보유 — 실제 매수 기록 <small>(01 탭 원화 평가손익에 사용 · 비워 두면 표시 안 함)</small></h3>
+      <div class=tbl><table><thead><tr><th>종목</th><th>매수가</th><th>투자금(만원)</th><th>매수일<br><small>YYYY-MM-DD 또는 MM/DD</small></th><th>매수 환율<br><small>선택 · 입력 시 우선</small></th></tr></thead><tbody>
+      <tr><td>① 헤알채 ${C.tracked.label}</td><td>${inp("pf.px", "PU(BRL)")}</td><td>${inp("pf.amt", "원화 투자금")}</td><td>${inp("pf.date", "예: 10/22", "type=text")}</td><td>${inp("pf.fx", "BRL/KRW")}</td></tr>
+      <tr><td>② 달러채 <select data-k="pos.usd.n" style="max-width:150px"><option value="">(04-1 선택 종목)</option>${L.map(o => `<option ${o.n === C.pos.usd.n ? "selected" : ""}>${o.n}</option>`).join("")}</select></td><td>${inp("usd.px", "가격(액면 100)")}</td><td>${inp("usd.amt", "원화 투자금")}</td><td>${inp("usd.date", "예: 10/22", "type=text")}</td><td>${inp("usd.fx", "USD/KRW")}</td></tr></tbody></table></div>
+      <div class=note>매수일을 넣으면 그날의 환율(ECB)을 자동으로 씁니다(달러는 최근 1.5년 이내만). 환율을 직접 넣으면 그 값이 우선이고, 둘 다 비우면 현재 환율로 보아 환율 손익이 0으로 계산됩니다. 개인 값이라 서버·GitHub에는 올라가지 않고 이 기기 브라우저(와 이 Mac의 로컬 설정)에만 저장됩니다. 폰으로 옮기려면 [설정 복사]에 포함됩니다.</div>`; })()}
     <p class=noprint style="margin:6px 0"><button onclick="stageAdd()">＋ 단계 추가</button> <small>매수 사다리용으로 단계를 늘릴 수 있습니다. 비중 합이 100%가 되도록 입력하세요.</small></p>
     <p><button class=pri onclick="saveCfg()">저장</button> <span id=saved class=note></span></p>
     <p><button onclick="exportCfg()">📋 설정 복사</button> <button onclick="importCfg()">📥 설정 붙여넣기</button> <span class=note>다른 기기(폰)로 옮길 때: 한 기기에서 복사 → 메신저 '나에게 보내기' 등으로 전달 → 다른 기기에서 붙여넣기. 설정은 서버·GitHub에 올라가지 않고 각 기기 브라우저에만 저장됩니다.</span></p>
@@ -1178,6 +1207,7 @@ const HELP = [
     <li><b>매수 지표 박스</b> — 패널(① 헤알채 ② 달러채 ③ 5:5)별 ON/OFF, 현재가와 선의 거리, 수익 소진 TARGET 상태. 오른쪽 <b>기준 실질 입력칸</b>으로 기준을 바꾸면 매수선·ON/OFF·차트의 초록 파선·🔔 개수·02 탭 사다리가 같이 바뀝니다. "손절 규칙 정합 기준으로 맞춤"은 기준을 정합 기준 이상으로 올려 주고, "기본값"은 되돌립니다. 각 행 아래 줄은 <b>현재 현지 실질 → ${RT.kr}(환율 가정 4종의 최악·평균·최선)</b>과 <b>기준 실질에 매수했을 때의 ${RT.kr}</b>을 보여 주고(손절 판단은 최악 값만, 평균은 4종 단순 평균이라 확률 가중 기대값이 아님). 최악 값 옆 <b>연 ±○○만원</b>은 투자금(02·04·05와 공유 입력) × 연 원화 실질 수익률의 구매력 기준 연 손익이며, 접이식 표에 손절 기준 대비 여유·부족 금액도 있습니다(최악이 플러스면 손실이 아니라 기대에 못 미치는 수익). 박스 안의 %는 <b>과거 빈도</b>입니다 — 과거 약 9년(주 1회 표본)의 롤링 1년 환율 변화를 그대로 적용했을 때 원화 실질이 최악 값 <b>이하</b>, 평균 값 <b>이상</b>, 최선 값 <b>이상</b>으로 나온 비율(박스는 전체 기간, 마우스를 올리면 최근 5년, 접이식 표에는 전체 / 최근 5년). 구간이 겹쳐 독립 사건 수가 적고 미래 확률이 아니며, 04-2의 '발생빈도'(5개 가정 중 가장 가까운 것에 배정)와는 정의가 다릅니다, 아래 접이식 표 "현지 실질 → ${RT.kr} 환산"에 환율 가정별 값이 모두 나옵니다(${RT.kr} = (1+현지 실질)×(1+현지 물가)÷(1+한국 물가)×(1+환율 연 변동)−1, 손절·정합 계산과 같은 식). 이 입력값은 <b>이 기기에만</b> 저장되며 서버 알림 기준(저장소 변수)은 따로입니다.</li>
     <li><b>듀레이션·금리 민감도</b> — 세 패널에 수정 듀레이션과 "금리 +1%p / −1%p일 때 가격 변동률"을 보여 줍니다. 가격 변동은 현재 YTM에서 정확히 다시 평가한 값(볼록성 포함)이고, ③은 두 구성이 같은 폭으로 움직이는 평행 이동의 50:50 평균입니다. 달러채는 오늘 기준 현재 추정 YTM으로 계산합니다. 04-1 달러채 표의 듀레이션도 입력 시세 기준일의 값을 직접 계산한 것이며(수동 입력 듀레이션은 계산 실패 때만 대체), 시세를 갱신하면 따로 고치지 않아도 됩니다.</li>
     <li><b>시장 기준 실질</b> — ① 행 끝에 IPCA+ 2032 금리를 시장 기준 실질로 병기하고 시장 손익분기 물가(PF32 대 IPCA+ 2032)를 설문(Focus)과 비교합니다. 설문 기준 실질이 시장 기준보다 높게 나오면 그만큼 낙관적일 수 있다는 뜻이며, 규칙(매수선·손절)은 설문 기준을 씁니다.</li>
+    <li><b>내 보유 손익(원화)</b> — 설정 탭의 내 보유(매수가·투자금·매수일)가 있을 때만 맨 위에 나옵니다. 평가금액 = 투자금 × (현재가 ÷ 매수가) × (현재 환율 ÷ 매수 환율)이고, 손익을 <b>가격 손익</b>과 <b>환율 손익</b>으로 나눠 보여 줍니다(원화 명목: 물가 미보정). 달러채는 수령한 이자·경과이자가 빠지고 현재 가격이 입력 시세 이후 미 국채 금리 변동만 반영한 추정입니다. 세금·수수료·환전비용 미반영.</li>
     <li><b>손절 지표 박스</b> — 환율 가정 4종 최악에서 ${RT.kr}이 기준 미만인지(⚠/✔), 그리고 한계 환율·손절 환율. 기준(기본 4.5%)은 입력칸으로 수정합니다.</li>
     <li><b>체결 알림</b> — 02 탭의 다음 단계 지정가에 닿았는지.</li>
     <li><b>통화 경고와 환율 반영 비교표</b> — 패널의 YTM은 통화가 달라 직접 비교할 수 없음을 알리고, 환율 가정별 ${RT.kr}을 나란히 보여 줍니다.</li>
@@ -1216,9 +1246,10 @@ const HELP = [
   {k: "t06", t: "06 국채 전체 — Tesouro 상품 목록", h: `
     <p><b>의도</b> — 같은 기준일의 Tesouro Direto 전체 상품 가격·수익률을 확인하고, 추적 종목(PF32 등)을 맨 위에서 비교합니다. 검색창으로 종목을 찾습니다.</p>
     <p class=note>가격은 Investir CSV(매수 쪽 가격) 기준입니다. 직접 올린 CSV(상단 📂)가 더 최신이면 그것을 씁니다.</p>`},
-  {k: "tset", t: "설정 — 분할매수 단계", h: `
+  {k: "tset", t: "설정 — 분할매수 단계·내 보유", h: `
     <p><b>의도</b> — 개인 포지션(체결가·날짜·체결 여부)만 입력합니다. 나머지(물가·환율·시세)는 자동이고, 가정과 기준값은 각 탭에서 바로 수정합니다(설정은 최소화).</p>
     <ul><li><b>단계 표</b> — 비중%, 지정가(미체결) 또는 체결가(체결 후), 날짜(MM/DD, 체결 후), 체결 체크. 합이 100%가 되게 입력합니다. ＋단계 추가 / ✕삭제(단계 자체가 삭제됩니다. 체결 해제는 체크박스).</li>
+    <li><b>내 보유(실제 매수 기록)</b> — 헤알채·달러채별 매수가, 투자금(만원), 매수일(YYYY-MM-DD 또는 MM/DD), 선택 입력인 매수 환율. 입력하면 01 탭 맨 위에 <b>원화 평가손익</b> 박스가 생깁니다. 매수일을 넣으면 그날의 환율을 자동으로 쓰고, 환율을 직접 넣으면 그 값이 우선하며, 둘 다 비우면 현재 환율로 보아 환율 손익이 0이 됩니다. 비워 두면 박스가 나타나지 않습니다.</li>
     <li><b>저장</b> — 이 기기 브라우저에 저장됩니다(서버·GitHub로 전송되지 않음).</li>
     <li><b>설정 복사 / 붙여넣기</b> — 기기 간 이동(Mac→폰). Mac 앱(127.0.0.1)에서 복사 → 메신저 "나에게 보내기" → 폰에서 붙여넣기. 단계, 매수·손절·TARGET 기준, 시나리오·환율 가정 입력값, 이자 계산 입력이 함께 옮겨집니다. 개인 값이 들어 있으니 전달 후 메시지는 삭제하세요.</li></ul>`},
   {k: "alerts", t: "알림 체계 — 무엇이 언제 어디로 오나", h: `
@@ -1292,7 +1323,7 @@ V.help = m => {
     <div class=note>이 설명서는 개념과 읽는 법만 담고 있으며 개인 설정값은 포함하지 않습니다. 앱의 계산 규칙이 바뀌면 이 탭도 함께 갱신됩니다.</div></div></section>`;
 };
 
-const CFG_KEYS = ["stages", "target_real", "extra_fx_rows", "fx_range", "buy_real", "stop_real", "mk", "cal_plan", "cal_zone", "cal_watch", "pol", "usd_inc", "rc3"];
+const CFG_KEYS = ["stages", "target_real", "extra_fx_rows", "fx_range", "buy_real", "stop_real", "mk", "cal_plan", "cal_zone", "cal_watch", "pol", "usd_inc", "rc3", "pos"];
 async function exportCfg() {
   const o = {}; CFG_KEYS.forEach(k => { if (C[k] !== undefined) o[k] = C[k]; });
   const t = JSON.stringify(o);
