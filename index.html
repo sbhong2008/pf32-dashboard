@@ -652,6 +652,36 @@ function posPnL(m) {
   const tot = rows.length > 1 ? {cost: rows.reduce((x, r) => x + r.cost, 0), value: rows.reduce((x, r) => x + r.value, 0)} : null;
   return {rows, tot};
 }
+// ---------- 설정 탭: 원화 입력 시뮬레이션(PF32 만기 보유) — 투자금·가정 매수 PU·매수 환율(비우면 현재값)로 환율 가정별 만기 원화 금액과 연 원화 실질 수익률 ----------
+function simEdit(el) {
+  const v = parseFloat(el.value), k = el.dataset.s; if (!C.sim) C.sim = {};
+  if (isNaN(v) || v <= 0) delete C.sim[k]; else C.sim[k] = v;
+  try { localStorage.setItem("pf32cfg", JSON.stringify(C)); } catch (e) {}
+  if (LOCAL) fetch("/api/config", {method: "POST", body: JSON.stringify(C)}).catch(() => {});
+  render(true);
+}
+function simReset() { delete C.sim; try { localStorage.setItem("pf32cfg", JSON.stringify(C)); } catch (e) {} if (LOCAL) fetch("/api/config", {method: "POST", body: JSON.stringify(C)}).catch(() => {}); render(); }
+function simCalc(m) {
+  const S = C.sim || {}, sg = buySignals(m), kN = INF().kr, T = sg.Tpf, amt = S.amt || USD_INC().amt, px = S.px || m.price, fx0 = S.fx || m.fx;
+  const won0 = amt * 1e4, brl0 = won0 / fx0, units = brl0 / px, mat = units * 1000, y = ((1000 / px) ** (1 / T) - 1) * 100, names = ["환율 불변", "5년 연평균", "헤알 약세", "원화 강세형(헤알·달러 동반 약세)"];
+  const cases = stopCases().map((c, i) => ({n: names[i], fxm: m.fx * (1 + c[0] / 100) ** T, gb: c[0]}));
+  if (S.fxm) cases.push({n: "직접 입력 만기 환율", fxm: S.fxm, gb: ((S.fxm / m.fx) ** (1 / T) - 1) * 100});
+  const rows = cases.map(c => { const w = mat * c.fxm, nomA = ((w / won0) ** (1 / T) - 1) * 100; return {...c, w, pnl: w - won0, nomA, realA: real(nomA, kN), pv: w / (1 + kN / 100) ** T}; });
+  return {S, amt, px, fx0, won0, brl0, units, mat, y, T, kN, brI: sg.brI, yReal: real(y, sg.brI), rows};
+}
+function simSection(m) {
+  const r = simCalc(m), S = r.S, mw = v => (v >= 0 ? "+" : "−") + f2(Math.abs(v) / 1e4, 0) + "만원", eok = v => f2(v / 1e4, 0) + "만원";
+  const inp = (k, ph) => `<input type=number step=any data-s="${k}" value="${S[k] != null ? S[k] : ""}" placeholder="${ph}" onchange="simEdit(this)" style="width:100%">`;
+  return `<h3 style="margin:18px 0 4px;font-size:14px">원화 입력 시뮬레이션 — ${C.tracked.label} 만기 보유 <small>(실제 매수와 무관한 가정 계산 · 비우면 현재값)</small></h3>
+    <div class=tbl><table><thead><tr><th>투자금(만원)</th><th>가정 매수 PU (BRL)</th><th>가정 매수 환율 (BRL/KRW)</th><th>만기 환율 직접 입력<br><small>선택 · 행 추가</small></th></tr></thead><tbody>
+    <tr><td>${inp("amt", f2(USD_INC().amt, 0) + " (공유 투자금)")}</td><td>${inp("px", f2(m.price) + " (현재)")}</td><td>${inp("fx", f2(m.fx) + " (현재)")}</td><td>${inp("fxm", "예: 240")}</td></tr></tbody></table></div>
+    <p class=noprint style="margin:4px 0"><button onclick="simReset()">입력 지우기</button></p>
+    <div class="callout sum" style="margin:6px 0"><b>${f2(r.amt, 0)}만원</b> ÷ 환율 ${f2(r.fx0, 2)} = <b>${f2(r.brl0, 0)} BRL</b> ÷ PU ${f2(r.px)} = <b>${f2(r.units, 2)}단위</b> → 만기(${C.tracked.venc}, 잔존 ${f2(r.T, 2)}년) 수령 <b>${f2(r.mat, 0)} BRL</b> <small>(할인차액 ${f2(r.mat - r.brl0, 0)} BRL)</small><br>
+      이 가격의 만기수익률 ${RT.n} <b>${f2(r.y, 2)}%</b> · 현지 ${RT.r} <b>${pct(r.yReal, 2)}</b> <small>(브라질 물가 ${f2(r.brI, 2)}% 차감)</small></div>
+    <div class=tbl><table class=mono><thead><tr><th>환율 가정</th><th class=r>헤알 연 변동</th><th class=r>만기 BRL/KRW</th><th class=r>만기 원화 금액</th><th class=r>손익 ${RT.kn}</th><th class=r>연 수익률 ${RT.kn}</th><th class=r>연 수익률 ${RT.kr}<br><small>한국 물가 ${f2(r.kN, 2)}%</small></th><th class=r>현재 구매력 환산</th></tr></thead><tbody>
+    ${r.rows.map(x => `<tr><td>${x.n}</td><td class=r>${pct(x.gb, 1)}</td><td class=r>${f2(x.fxm, 1)}</td><td class=r>${eok(x.w)}</td><td class=r><span class="${x.pnl < 0 ? "neg" : ""}">${mw(x.pnl)}</span></td><td class=r>${pct(x.nomA, 2)}</td><td class=r><b class="${x.realA < SR() ? "neg" : ""}">${pct(x.realA, 2)}</b></td><td class=r>${eok(x.pv)}</td></tr>`).join("")}</tbody></table></div>
+    <div class=note>만기 환율 = 현재 환율 × (1+헤알 연 변동)^잔존연수(가정은 04-2와 같고 예측이 아닙니다). 만기 원화 금액 = 투자금 ÷ 매수 환율 ÷ 매수 PU × 1,000 BRL × 만기 환율. 연 수익률 = (만기 금액 ÷ 투자금)^(1÷잔존연수) − 1, ${RT.kr}은 한국 물가를 뺀 값이며 빨간색은 손절 기준 ${f2(SR(), 1)}% 미만입니다. 세금·수수료·환전비용·중도 매도 가격 차이는 반영하지 않았고, 입력값은 이 기기에만 저장됩니다.</div>`;
+}
 function posBox(m) {
   const {rows, tot} = posPnL(m); if (!rows.length) return "";
   const mw = v => (v >= 0 ? "+" : "−") + f2(Math.abs(v) / 1e4, 0) + "만원", cls = v => v < 0 ? "neg" : "pos";
@@ -1154,13 +1184,14 @@ V.settings = m => {
   const st = C.stages.map((s, i) => `<tr><td>${s.name}</td><td><input type=number step=any data-k="stages.${i}.pct" value="${s.pct}"></td><td><input type=number step=any data-k="stages.${i}.price" value="${s.price}"></td><td><input data-k="stages.${i}.date" value="${s.date || ""}"></td><td><input type=checkbox data-k="stages.${i}.filled" ${s.filled ? "checked" : ""}></td><td><button class=noprint onclick="stageDel(${i})" title="이 단계 삭제" style="padding:2px 7px">✕</button></td></tr>`).join("");
   return `<section><h2>설정 — 분할매수·내 보유 (이 기기 브라우저에 저장)</h2><div class=body>
     <div class=tbl><table><thead><tr><th>단계</th><th>비중%</th><th>지정가/체결가</th><th>날짜</th><th>체결</th><th></th></tr></thead><tbody>${st}</tbody></table></div>
+    <p class=noprint style="margin:6px 0"><button onclick="stageAdd()">＋ 단계 추가</button> <small>매수 사다리용으로 단계를 늘릴 수 있습니다. 비중 합이 100%가 되도록 입력하세요.</small></p>
     ${(() => { if (!C.pos) C.pos = {}; C.pos.pf = C.pos.pf || {}; C.pos.usd = C.pos.usd || {}; const L = C.usd_bonds && C.usd_bonds.length ? C.usd_bonds : USD_DEF, v = o => o == null ? "" : o, inp = (k, ph, t) => `<input ${t || "type=number step=any"} data-k="pos.${k}" value="${v(C.pos[k.split(".")[0]][k.split(".")[1]])}" placeholder="${ph}" style="width:100%">`;
       return `<h3 style="margin:14px 0 4px;font-size:14px">내 보유 — 실제 매수 기록 <small>(01 탭 원화 평가손익에 사용 · 비워 두면 표시 안 함)</small></h3>
       <div class=tbl><table><thead><tr><th>종목</th><th>매수가</th><th>투자금(만원)</th><th>매수일<br><small>YYYY-MM-DD 또는 MM/DD</small></th><th>매수 환율<br><small>선택 · 입력 시 우선</small></th></tr></thead><tbody>
       <tr><td>① 헤알채 ${C.tracked.label}</td><td>${inp("pf.px", "PU(BRL)")}</td><td>${inp("pf.amt", "원화 투자금")}</td><td>${inp("pf.date", "예: 10/22", "type=text")}</td><td>${inp("pf.fx", "BRL/KRW")}</td></tr>
       <tr><td>② 달러채 <select data-k="pos.usd.n" style="max-width:150px"><option value="">(04-1 선택 종목)</option>${L.map(o => `<option ${o.n === C.pos.usd.n ? "selected" : ""}>${o.n}</option>`).join("")}</select></td><td>${inp("usd.px", "가격(액면 100)")}</td><td>${inp("usd.amt", "원화 투자금")}</td><td>${inp("usd.date", "예: 10/22", "type=text")}</td><td>${inp("usd.fx", "USD/KRW")}</td></tr></tbody></table></div>
       <div class=note>매수일을 넣으면 그날의 환율(ECB)을 자동으로 씁니다(달러는 최근 1.5년 이내만). 환율을 직접 넣으면 그 값이 우선이고, 둘 다 비우면 현재 환율로 보아 환율 손익이 0으로 계산됩니다. 개인 값이라 서버·GitHub에는 올라가지 않고 이 기기 브라우저(와 이 Mac의 로컬 설정)에만 저장됩니다. 폰으로 옮기려면 [설정 복사]에 포함됩니다.</div>`; })()}
-    <p class=noprint style="margin:6px 0"><button onclick="stageAdd()">＋ 단계 추가</button> <small>매수 사다리용으로 단계를 늘릴 수 있습니다. 비중 합이 100%가 되도록 입력하세요.</small></p>
+    ${simSection(m)}
     <p><button class=pri onclick="saveCfg()">저장</button> <span id=saved class=note></span></p>
     <p><button onclick="exportCfg()">📋 설정 복사</button> <button onclick="importCfg()">📥 설정 붙여넣기</button> <span class=note>다른 기기(폰)로 옮길 때: 한 기기에서 복사 → 메신저 '나에게 보내기' 등으로 전달 → 다른 기기에서 붙여넣기. 설정은 서버·GitHub에 올라가지 않고 각 기기 브라우저에만 저장됩니다.</span></p>
     <div class=note>시세·환율·물가는 갱신 때 자동 수집됩니다 — 환율 Frankfurter(ECB) · 국채 Tesouro Transparente·Tesouro Direto · 물가 한국은행(ECOS)·미 재무부·BCB Focus. 시나리오 확률·환율·달러채 가정은 04 탭에서 직접 수정합니다.</div>
@@ -1250,6 +1281,7 @@ const HELP = [
     <p><b>의도</b> — 개인 포지션(체결가·날짜·체결 여부)만 입력합니다. 나머지(물가·환율·시세)는 자동이고, 가정과 기준값은 각 탭에서 바로 수정합니다(설정은 최소화).</p>
     <ul><li><b>단계 표</b> — 비중%, 지정가(미체결) 또는 체결가(체결 후), 날짜(MM/DD, 체결 후), 체결 체크. 합이 100%가 되게 입력합니다. ＋단계 추가 / ✕삭제(단계 자체가 삭제됩니다. 체결 해제는 체크박스).</li>
     <li><b>내 보유(실제 매수 기록)</b> — 헤알채·달러채별 매수가, 투자금(만원), 매수일(YYYY-MM-DD 또는 MM/DD), 선택 입력인 매수 환율. 입력하면 01 탭 맨 위에 <b>원화 평가손익</b> 박스가 생깁니다. 매수일을 넣으면 그날의 환율을 자동으로 쓰고, 환율을 직접 넣으면 그 값이 우선하며, 둘 다 비우면 현재 환율로 보아 환율 손익이 0이 됩니다. 비워 두면 박스가 나타나지 않습니다.</li>
+    <li><b>원화 입력 시뮬레이션</b> — 실제 매수와 무관한 가정 계산입니다. 투자금(만원), 가정 매수 PU, 가정 매수 환율(비우면 현재값), 선택으로 만기 환율을 넣으면 PF32를 만기까지 보유할 때 환율 가정 4종(및 직접 입력)별 <b>만기 원화 금액·손익·연 수익률(원화 명목·원화 실질)·현재 구매력 환산</b>이 나옵니다. 입력 즉시 계산되고 [저장] 없이 이 기기에 저장됩니다. 세금·수수료·환전비용·중도 매도 가격 차이는 반영하지 않습니다.</li>
     <li><b>저장</b> — 이 기기 브라우저에 저장됩니다(서버·GitHub로 전송되지 않음).</li>
     <li><b>설정 복사 / 붙여넣기</b> — 기기 간 이동(Mac→폰). Mac 앱(127.0.0.1)에서 복사 → 메신저 "나에게 보내기" → 폰에서 붙여넣기. 단계, 매수·손절·TARGET 기준, 시나리오·환율 가정 입력값, 이자 계산 입력이 함께 옮겨집니다. 개인 값이 들어 있으니 전달 후 메시지는 삭제하세요.</li></ul>`},
   {k: "alerts", t: "알림 체계 — 무엇이 언제 어디로 오나", h: `
@@ -1323,7 +1355,7 @@ V.help = m => {
     <div class=note>이 설명서는 개념과 읽는 법만 담고 있으며 개인 설정값은 포함하지 않습니다. 앱의 계산 규칙이 바뀌면 이 탭도 함께 갱신됩니다.</div></div></section>`;
 };
 
-const CFG_KEYS = ["stages", "target_real", "extra_fx_rows", "fx_range", "buy_real", "stop_real", "mk", "cal_plan", "cal_zone", "cal_watch", "pol", "usd_inc", "rc3", "pos"];
+const CFG_KEYS = ["stages", "target_real", "extra_fx_rows", "fx_range", "buy_real", "stop_real", "mk", "cal_plan", "cal_zone", "cal_watch", "pol", "usd_inc", "rc3", "pos", "sim"];
 async function exportCfg() {
   const o = {}; CFG_KEYS.forEach(k => { if (C[k] !== undefined) o[k] = C[k]; });
   const t = JSON.stringify(o);
