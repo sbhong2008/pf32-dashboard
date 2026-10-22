@@ -1,0 +1,557 @@
+<nav class="gl-toc" aria-label="용어정리 목차">
+  <ol>
+    <li><a href="javascript:glGo('rates')">1. 금리와 수익률</a><div class="sub">표면금리, YTM, 실질금리, bp</div></li>
+    <li><a href="javascript:glGo('risk')">2. 가격과 위험</a><div class="sub">듀레이션, 볼록성, 환위험</div></li>
+    <li><a href="javascript:glGo('structure')">3. 채권의 구조</a><div class="sub">이표채, 할인채, 경과이자</div></li>
+    <li><a href="javascript:glGo('brazil')">4. 브라질 국채</a><div class="sub">LTN, NTN-F, 수수료</div></li>
+    <li><a href="javascript:glGo('us')">5. 미국 국채시장</a><div class="sub">T-bill, 입찰, SOFR, TGA</div></li>
+    <li><a href="javascript:glGo('tax')">6. 세금과 계좌</a><div class="sub">비과세, 종합과세, ISA·IRP</div></li>
+    <li><a href="javascript:glGo('pairs')">7. 헷갈리는 짝</a></li>
+  </ol>
+</nav>
+<div class="gl-main">
+
+<!-- 1 -->
+<section class="part" id="gl-rates">
+<h2>1. 금리와 수익률</h2>
+<p class="lead">기준 채권 하나로 이어서 계산합니다. 액면 100, 표면금리 3%, 연 1회 이자, 만기 3년인 채권입니다.</p>
+
+<article class="term">
+<h3>%p와 bp <small>percentage point, basis point</small></h3>
+<p class="def">금리의 변화 폭을 말하는 단위입니다. 1%p는 금리 숫자 자체가 1만큼 변한 것이고, 1bp는 0.01%p입니다.</p>
+<div class="ex"><h4>예제</h4>
+<div class="calc">
+<div>금리 3% → 4%: 변화 폭 = 1%p = 100bp</div>
+<div>같은 변화를 비율로 쓰면 (4 − 3) ÷ 3 = 33% 상승 (금리 기사에서는 쓰지 않는 표현)</div>
+<div>입찰 tail 3bp = 0.03%p</div>
+</div></div>
+<p class="pt"><b>실전:</b> "금리 1% 상승"은 대부분 1%p를 뜻합니다. 보고서에서는 %p와 bp로 통일합니다.</p>
+</article>
+
+<article class="term">
+<h3>표면금리 <small>coupon rate</small></h3>
+<p class="def">발행할 때 정해진 이자율입니다. 액면가에 곱해 매년 받는 이자를 정하며, 만기까지 바뀌지 않습니다.</p>
+<div class="ex"><h4>예제</h4>
+<div class="calc">
+<div>액면 100 × 표면 3% = 매년 이자 3</div>
+<div>시장금리가 4%가 되든 2%가 되든 이 채권의 이자는 계속 3</div>
+</div></div>
+<p class="pt"><b>실전:</b> 표면금리는 내 수익률이 아닙니다. 내 수익률은 산 가격에 달려 있습니다(아래 YTM).</p>
+</article>
+
+<article class="term">
+<h3>시장금리 <small>market yield</small></h3>
+<p class="def">지금 시장에서 같은 만기·신용의 채권에 요구하는 수익률입니다. 매일 변하고, 기존 채권의 가격을 결정합니다.</p>
+<div class="ex"><h4>예제: 시장금리가 4%로 오르면 기준 채권의 가격</h4>
+<div class="calc">
+<div>가격 = 각 현금흐름 ÷ (1 + 시장금리)<sup>연수</sup> 의 합</div>
+<div>1년차 3 ÷ 1.04 = 2.885</div>
+<div>2년차 3 ÷ 1.04² = 3 ÷ 1.0816 = 2.774</div>
+<div>3년차 103 ÷ 1.04³ = 103 ÷ 1.12486 = 91.567</div>
+<div class="r">가격 = 97.23 (액면 100보다 2.77 싸짐)</div>
+</div>
+<p>새로 나온 채권이 4를 주는데 3을 주는 옛 채권을 액면에 살 사람은 없으므로, 가격이 내려가 수익률을 4%에 맞춥니다.</p></div>
+</article>
+
+<article class="term">
+<h3>만기수익률 <small>YTM, yield to maturity</small></h3>
+<p class="def">지금 가격에 사서 만기까지 들고 있을 때 얻는 연 수익률입니다. 이자를 같은 수익률로 재투자한다고 가정합니다. 채권끼리 비교할 때의 기준입니다.</p>
+<div class="ex"><h4>예제 1: 이표채</h4>
+<div class="calc">
+<div>기준 채권을 97.23에 사면 YTM = 4% (위 계산을 거꾸로 푼 값)</div>
+<div>구성: 매년 이자 3 + 만기 상환 차익 2.77을 3년에 걸쳐 나눠 받는 효과</div>
+</div></div>
+<div class="ex"><h4>예제 2: 할인채</h4>
+<div class="calc">
+<div>가격 80, 5년 뒤 액면 100 수령</div>
+<div>YTM = (100 ÷ 80)<sup>1/5</sup> − 1 = 1.25<sup>0.2</sup> − 1</div>
+<div class="r">YTM = 4.56%</div>
+</div></div>
+<p class="pt"><b>실전:</b> 증권사가 제시하는 "매수 수익률"은 YTM입니다. Tesouro Direto 기준 YTM과의 차이가 증권사 마진입니다.</p>
+</article>
+
+<article class="term">
+<h3>현재수익률 <small>current yield</small></h3>
+<p class="def">연 이자 ÷ 현재 가격입니다. 만기 상환 차익이나 차손은 반영하지 않습니다.</p>
+<div class="ex"><h4>예제</h4>
+<div class="calc">
+<div>이자 3 ÷ 가격 97.23 = <span class="r">3.09%</span></div>
+<div>YTM 4%와 차이 0.91%p = 만기 차익 2.77을 무시한 부분</div>
+</div></div>
+<p class="pt"><b>실전:</b> "월배당·분배율"로 광고하는 숫자는 현재수익률에 가깝습니다. 할인 매입 채권이면 실제 수익률은 더 높고, 할증(액면 초과) 매입 채권이면 더 낮습니다.</p>
+</article>
+
+<article class="term">
+<h3>실질금리 <small>real yield</small></h3>
+<p class="def">명목금리에서 물가상승률을 뺀 값입니다. 돈의 구매력이 실제로 얼마나 늘어나는지 보여줍니다. 미국은 10년 물가연동국채(TIPS) 수익률, FRED 코드 DFII10으로 확인합니다.</p>
+<div class="ex"><h4>예제</h4>
+<div class="calc">
+<div>10년 명목 4.30%, 기대인플레 2.30%</div>
+<div>간편식: 4.30 − 2.30 = 2.00%</div>
+<div>정확식: 1.0430 ÷ 1.0230 − 1 = <span class="r">1.96%</span></div>
+</div></div>
+<p class="pt"><b>실전:</b> 실질금리가 높을 때 장기 국채를 사서 만기 보유하면 높은 실질 수익을 고정할 수 있습니다. 미국채 분할 매수 트리거를 DFII10 수준으로 잡은 이유입니다.</p>
+</article>
+
+<article class="term">
+<h3>기대인플레 <small>BEI, breakeven inflation</small></h3>
+<p class="def">같은 만기 명목국채와 TIPS 수익률의 차이입니다. 시장이 예상하는 평균 물가상승률이며, FRED 코드 T10YIE입니다.</p>
+<div class="ex"><h4>예제</h4>
+<div class="calc">
+<div>10년 명목 4.30% − 10년 TIPS 2.00% = BEI <span class="r">2.30%</span></div>
+<div>실제 10년 평균 물가가 3.00%면: TIPS 수익 ≈ 2.00 + 3.00 = 5.00% &gt; 명목 4.30% → TIPS 유리</div>
+<div>실제 평균 물가가 1.50%면: TIPS ≈ 3.50% &lt; 명목 4.30% → 명목채 유리</div>
+</div></div>
+<p class="pt"><b>실전:</b> BEI는 명목채와 TIPS 사이의 손익분기 물가입니다. 물가가 이보다 높을 것 같으면 TIPS 비중을 늘립니다.</p>
+</article>
+
+<article class="term">
+<h3>텀프리미엄 <small>term premium</small></h3>
+<p class="def">단기채를 계속 굴리는 대신 장기채를 들고 있는 위험에 대해 투자자가 추가로 요구하는 수익입니다. 뉴욕연준 추정치, FRED 코드 ACMTP10입니다.</p>
+<div class="ex"><h4>예제</h4>
+<div class="calc">
+<div>10년 금리 4.30% = 향후 10년 기대 단기금리 평균 3.80% + 텀프리미엄 0.50%</div>
+<div>재정적자 우려로 텀프리미엄이 1.00%로 오르면, 기준금리 전망이 같아도 10년 금리는 4.80%</div>
+</div></div>
+<p class="pt"><b>실전:</b> 연준이 금리를 내려도 장기금리가 안 내려가는 경우는 대개 텀프리미엄 상승 때문입니다.</p>
+</article>
+
+<article class="term">
+<h3>스프레드 <small>spread</small></h3>
+<p class="def">두 금리의 차이입니다. 위험이 다른 채권 사이의 스프레드는 그 위험의 가격입니다.</p>
+<div class="ex"><h4>예제</h4>
+<div class="calc">
+<div>브라질 달러채 10년 6.50% − 미국채 10년 4.30% = <span class="r">220bp</span> (브라질 국가 신용위험의 대가)</div>
+<div>미국 하이일드 회사채 7.20% − 미국채 4.30% = 290bp (HY 스프레드)</div>
+</div></div>
+<p class="pt"><b>실전:</b> 위기 때는 스프레드가 급히 벌어집니다. HY 스프레드 확대는 위험자산 회피 신호로 씁니다.</p>
+</article>
+
+<article class="term">
+<h3>장단기 금리차 <small>yield curve slope</small></h3>
+<p class="def">장기금리 − 단기금리입니다. 보통 10년 − 2년(FRED T10Y2Y)을 씁니다.</p>
+<div class="ex"><h4>예제</h4>
+<div class="calc">
+<div>정상: 10년 4.30% − 2년 3.90% = +40bp</div>
+<div>역전: 10년 4.20% − 2년 4.80% = −60bp (시장이 향후 금리 인하, 즉 경기 둔화를 예상)</div>
+</div></div>
+<p class="pt"><b>실전:</b> 역전이 풀리며 다시 플러스로 돌아서는 시점에 경기 둔화가 실제로 나타나는 경우가 많았습니다.</p>
+</article>
+</section>
+
+<!-- 2 -->
+<section class="part" id="gl-risk">
+<h2>2. 가격과 위험</h2>
+<p class="lead">1장의 기준 채권(표면 3%, 3년)을 계속 씁니다.</p>
+
+<article class="term">
+<h3>가격과 금리의 역관계</h3>
+<p class="def">시장금리가 오르면 기존 채권 가격이 내리고, 내리면 오릅니다.</p>
+<div class="ex"><h4>예제: 시장금리별 기준 채권 가격</h4>
+<div class="tw"><table>
+<tr><th>시장금리</th><th class="n">가격</th><th class="n">4% 대비 변화</th></tr>
+<tr><td>3%</td><td class="n">100.00</td><td class="n">+2.85%</td></tr>
+<tr><td>4%</td><td class="n">97.23</td><td class="n">기준</td></tr>
+<tr><td>5%</td><td class="n">94.55</td><td class="n">−2.75%</td></tr>
+</table></div></div>
+<p class="pt"><b>실전:</b> 만기까지 들고 있으면 중간 가격 변화는 평가손익일 뿐이고, 받는 돈은 처음 YTM대로 확정됩니다.</p>
+</article>
+
+<article class="term">
+<h3>듀레이션 <small>duration</small></h3>
+<p class="def">두 가지 뜻으로 씁니다. 맥컬리 듀레이션은 현금흐름을 받는 평균 시점(년)이고, 수정 듀레이션은 금리 1%p 변화 시 가격이 몇 % 변하는지를 나타냅니다.</p>
+<div class="ex"><h4>예제 1: 기준 채권(시장금리 4%)</h4>
+<div class="calc">
+<div>현재가치: 1년 2.885, 2년 2.774, 3년 91.567 (합계 97.23)</div>
+<div>맥컬리 = (2.885×1 + 2.774×2 + 91.567×3) ÷ 97.23 = 283.13 ÷ 97.23 = <span class="r">2.91년</span></div>
+<div>수정 = 2.91 ÷ 1.04 = <span class="r">2.80</span></div>
+<div>예측: 금리 +1%p → 가격 약 −2.80% → 94.51</div>
+<div>실제 가격 94.55 (차이 0.04는 아래 볼록성 때문)</div>
+</div></div>
+<div class="ex"><h4>예제 2: PF32(듀레이션 약 4.6) 1천만 원어치</h4>
+<div class="calc">
+<div>브라질 금리 +1%p → 약 −4.6% → 약 46만 원 평가손실 (환율 변화 제외)</div>
+<div>브라질 금리 −2%p → 약 +9.2% → 약 92만 원 평가이익</div>
+</div></div>
+<p class="pt"><b>실전:</b> 할인채의 맥컬리 듀레이션은 잔존만기와 같고, 이표채는 중간 이자 때문에 잔존만기보다 짧습니다. 금리 하락에 베팅하면 듀레이션이 긴 채권, 금리 상승이 걱정되면 짧은 채권을 고릅니다.</p>
+</article>
+
+<article class="term">
+<h3>볼록성 <small>convexity</small></h3>
+<p class="def">금리 변화가 클수록 듀레이션 근사가 틀어지는 정도를 보정하는 값입니다. 일반 채권은 금리가 내릴 때 더 많이 오르고, 오를 때 덜 내립니다.</p>
+<div class="ex"><h4>예제</h4>
+<div class="calc">
+<div>듀레이션만 보면 ±1%p에 ±2.80%로 대칭</div>
+<div>실제: 금리 −1%p → +2.85%, 금리 +1%p → −2.75%</div>
+<div class="r">하락 쪽 이익이 상승 쪽 손실보다 0.10%p 큼</div>
+</div></div>
+<p class="pt"><b>실전:</b> 장기채일수록 볼록성이 커서 금리 급락기에 이익이 크게 늘어납니다. 30년물이 금리 하락 시나리오에서 유리한 이유입니다.</p>
+</article>
+
+<article class="term">
+<h3>신용위험 <small>credit risk</small></h3>
+<p class="def">발행자가 이자나 원금을 제때 못 갚을 위험입니다. 신용등급이 낮을수록 금리를 더 줘야 팔립니다.</p>
+<div class="ex"><h4>예제</h4>
+<div class="calc">
+<div>같은 5년 만기: 미국채 4.00%, A등급 회사채 4.80%, 투기등급 7.50%</div>
+<div>투기등급 1천만 원이 부도, 회수율 40% → 400만 원 회수, 600만 원 손실</div>
+<div>추가 이자 3.50%p × 5년 ≈ 175만 원으로는 부도 한 번을 메우지 못함</div>
+</div></div>
+<p class="pt"><b>실전:</b> 은퇴 자금의 핵심 채권은 국채로 두고, 신용위험은 분산된 소규모로 제한합니다.</p>
+</article>
+
+<article class="term">
+<h3>환위험 <small>currency risk</small></h3>
+<p class="def">외화 채권의 원화 환산 가치가 환율 때문에 변하는 위험입니다. 고금리 통화일수록 환율 변동이 수익을 크게 흔듭니다.</p>
+<div class="ex"><h4>예제: 헤알채 1천만 원, 1년 수익률 13%</h4>
+<div class="tw"><table>
+<tr><th>헤알 대비 원화</th><th class="n">원화 환산 결과</th><th class="n">원화 수익률</th></tr>
+<tr><td>헤알 5% 강세</td><td class="n">1,000 × 1.13 × 1.05 = 1,186.5만 원</td><td class="n">+18.7%</td></tr>
+<tr><td>변동 없음</td><td class="n">1,130만 원</td><td class="n">+13.0%</td></tr>
+<tr><td>헤알 10% 약세</td><td class="n">1,000 × 1.13 × 0.90 = 1,017만 원</td><td class="n">+1.7%</td></tr>
+<tr><td>헤알 20% 약세</td><td class="n">1,000 × 1.13 × 0.80 = 904만 원</td><td class="n">−9.6%</td></tr>
+</table></div>
+<div class="calc"><div>손익분기 약세 폭 = 1 − 1 ÷ 1.13 = <span class="r">11.5%</span> (1년 기준)</div></div></div>
+<p class="pt"><b>실전:</b> 헤알채의 고금리는 상당 부분 예상되는 헤알 약세에 대한 보상입니다. 달러채는 헤알 위험이 없지만 원/달러 위험은 남습니다.</p>
+</article>
+
+<article class="term">
+<h3>재투자위험 <small>reinvestment risk</small></h3>
+<p class="def">중간에 받은 이자를 처음보다 낮은 금리로 다시 굴리게 되는 위험입니다. YTM은 이자를 같은 수익률로 재투자한다고 가정하므로, 금리가 내리면 실제 수익이 YTM보다 낮아집니다.</p>
+<div class="ex"><h4>예제</h4>
+<div class="calc">
+<div>할인채 LTN 1,000헤알어치를 YTM 13%, 5년으로 매수</div>
+<div>만기 수령액 = 1,000 × 1.13⁵ = 1,842헤알 (중간 이자가 없어 재투자위험 없음, 13% 확정)</div>
+<div>이표채 NTN-F는 반기마다 이자 지급 → 브라질 금리가 9%로 내리면 그 이자를 9%로 재투자 → 실현 수익 13% 미만</div>
+</div></div>
+<p class="pt"><b>실전:</b> 금리 하락을 예상하고 높은 금리를 고정하고 싶으면 할인채가, 생활비 현금흐름이 필요하면 이표채가 맞습니다.</p>
+</article>
+
+<article class="term">
+<h3>유동성위험 <small>liquidity risk</small></h3>
+<p class="def">중도에 팔 때 매수 가격과 매도 호가의 차이만큼 손해를 보거나, 원하는 때 팔지 못할 위험입니다. 장외 채권과 거래량이 적은 상품에서 큽니다.</p>
+<div class="ex"><h4>예제</h4>
+<div class="calc">
+<div>PF32를 532.0헤알에 매수, 같은 날 증권사 매도 호가 525.0헤알</div>
+<div>즉시 매도 시 손실 = 7.0 ÷ 532.0 = <span class="r">1.3%</span></div>
+<div>만기(약 5.2년)까지 보유하면 연환산 약 0.26%p로 희석</div>
+</div></div>
+<p class="pt"><b>실전:</b> 증권사 문의 때 "오늘 매수·매도 가격 차이"를 반드시 물어봅니다. 하루 거래량이 투자 규모보다 작은 ETN은 피합니다.</p>
+</article>
+</section>
+
+<!-- 3 -->
+<section class="part" id="gl-structure">
+<h2>3. 채권의 구조</h2>
+
+<article class="term">
+<h3>액면가 <small>face value, par</small></h3>
+<p class="def">만기에 돌려받는 원금 기준 금액입니다. 가격은 보통 액면 100 기준으로 표시합니다.</p>
+<div class="ex"><h4>예제</h4>
+<div class="calc">
+<div>미국채 가격 97.23 = 액면 100달러당 97.23달러 → 1만 달러어치면 9,723달러</div>
+<div>브라질 LTN·NTN-F는 1단위 액면이 1,000헤알</div>
+</div></div>
+</article>
+
+<article class="term">
+<h3>잔존만기 <small>remaining maturity</small></h3>
+<p class="def">지금부터 만기까지 남은 기간입니다. 발행 때의 만기가 아니라 잔존만기가 금리 위험과 수수료를 결정합니다.</p>
+<div class="ex"><h4>예제</h4>
+<div class="calc">
+<div>2022년 발행 10년물을 2026년 10월에 사면 잔존만기 약 6년 → 6년짜리 채권처럼 움직임</div>
+<div>PF32(2032년 1월 만기)는 10월 기준 잔존 약 5.2년</div>
+</div></div>
+</article>
+
+<article class="term">
+<h3>이표채 <small>coupon bond</small></h3>
+<p class="def">정기적으로 이자를 주고 만기에 원금을 돌려주는 채권입니다. 미국 Note·Bond, 브라질 NTN-F가 여기에 해당합니다.</p>
+<div class="ex"><h4>예제: NTN-F 1단위 반기 이자</h4>
+<div class="calc">
+<div>표면 연 10%를 반기 복리로 나눔: (1.10)<sup>1/2</sup> − 1 = 4.881%</div>
+<div>반기 이자 = 1,000헤알 × 4.881% = <span class="r">48.81헤알</span> (단순히 절반인 50헤알이 아님)</div>
+<div>1년 이자 = 97.62헤알</div>
+</div></div>
+<p class="pt"><b>실전:</b> 미국채는 연 표면금리의 정확히 절반을 반기마다 줍니다. 나라마다 규칙이 달라 계산 전에 확인합니다.</p>
+</article>
+
+<article class="term">
+<h3>할인채 <small>zero-coupon bond</small></h3>
+<p class="def">이자 없이 액면보다 싸게 사서 만기에 액면을 받는 채권입니다. 산 가격과 액면의 차이가 수익입니다. 브라질 LTN, 미국 T-bill이 해당합니다.</p>
+<div class="ex"><h4>예제: PF32(LTN 2032) 가격</h4>
+<div class="calc">
+<div>YTM 12.98%, 잔존 약 5.17년, 만기 액면 1,000헤알</div>
+<div>가격 = 1,000 ÷ 1.1298<sup>5.17</sup> = 1,000 ÷ 1.879</div>
+<div class="r">가격 ≈ 532헤알 (Tesouro 표시 532.04와 일치)</div>
+<div>만기에 1,000헤알 수령 → 차익 468헤알, 1.88배</div>
+</div></div>
+<p class="pt"><b>실전:</b> 수익률을 만기까지 완전히 고정하고 싶을 때 가장 깔끔합니다. 대신 중간 현금흐름이 없습니다.</p>
+</article>
+
+<article class="term">
+<h3>물가연동채 <small>inflation-linked bond</small></h3>
+<p class="def">원금이 물가지수에 맞춰 조정되는 채권입니다. 이자는 조정된 원금에 실질 표면금리를 곱해 줍니다. 미국 TIPS, 브라질 NTN-B가 해당합니다.</p>
+<div class="ex"><h4>예제: TIPS 1,000달러, 실질 표면 2%</h4>
+<div class="calc">
+<div>1년간 물가 3% 상승 → 원금 1,000 × 1.03 = 1,030달러</div>
+<div>연 이자 = 1,030 × 2% = 20.60달러 (실제로는 반기마다 절반씩)</div>
+<div>물가가 하락해도 만기 원금은 최초 1,000달러 아래로 내려가지 않음</div>
+</div></div>
+<p class="pt"><b>실전:</b> 은퇴 후 생활비는 물가와 함께 오르므로, 장기 채권 일부를 물가연동채로 두면 구매력을 지킬 수 있습니다.</p>
+</article>
+
+<article class="term">
+<h3>경과이자, 클린가격, 더티가격 <small>accrued interest</small></h3>
+<p class="def">이표채를 이자 지급일 사이에 사면, 직전 지급일부터 매수일까지 쌓인 이자를 판매자에게 먼저 냅니다. 이자를 뺀 가격이 클린가격, 이자를 더한 실제 지불액이 더티가격입니다.</p>
+<div class="ex"><h4>예제: NTN-F를 1월 이자 지급 후 91일째에 매수 (반기 181일)</h4>
+<div class="calc">
+<div>경과이자 = 48.81 × 91 ÷ 181 = <span class="r">24.54헤알</span></div>
+<div>클린가격 900헤알이면 실제 지불(더티) = 924.54헤알</div>
+<div>7월에 이자 48.81헤알 전액 수령 → 내 몫은 48.81 − 24.54 = 24.27헤알</div>
+</div></div>
+<p class="pt"><b>실전:</b> 지불 금액이 예상보다 크다고 손해가 아닙니다. 다음 이자 때 돌려받습니다.</p>
+</article>
+</section>
+
+<!-- 4 -->
+<section class="part" id="gl-brazil">
+<h2>4. 브라질 국채</h2>
+
+<article class="term">
+<h3>LTN, NTN-F, NTN-B <small>브라질 국채 종류</small></h3>
+<p class="def">LTN은 헤알 표시 할인채, NTN-F는 헤알 표시 이표채(표면 10%, 1월·7월 이자), NTN-B는 물가(IPCA) 연동 이표채입니다.</p>
+<div class="tw"><table>
+<tr><th>종류</th><th>구조</th><th>이 문서의 예</th><th>적합한 목적</th></tr>
+<tr><td>LTN</td><td>할인채, 만기 일시 상환</td><td>PF32 = LTN 2032</td><td>금리 고정, 재투자위험 회피</td></tr>
+<tr><td>NTN-F</td><td>반기 이자 + 만기 상환</td><td>JS37 = NTN-F 2037</td><td>정기 현금흐름</td></tr>
+<tr><td>NTN-B</td><td>물가연동 원금 + 반기 이자</td><td>-</td><td>브라질 물가 방어</td></tr>
+</table></div>
+</article>
+
+<article class="term">
+<h3>Selic <small>브라질 기준금리</small></h3>
+<p class="def">브라질 중앙은행(Copom)이 정하는 기준금리입니다. 헤알채 금리의 바닥을 결정합니다.</p>
+<div class="ex"><h4>예제</h4>
+<div class="calc">
+<div>Selic 인하 기대가 커지면 LTN·NTN-F 금리 하락 → 가격 상승</div>
+<div>PF32 금리가 12.98%에서 11.98%로 1%p 내리면 가격 약 +4.6% (듀레이션 4.6)</div>
+</div></div>
+</article>
+
+<article class="term">
+<h3>Tesouro Direto <small>브라질 개인용 국채 창구</small></h3>
+<p class="def">브라질 재무부의 개인 투자자용 직판 창구입니다. 한국 거주자가 직접 사기는 어렵고, 공시하는 매수 수익률(Taxa Compra)을 기준 금리로 씁니다.</p>
+<div class="ex"><h4>예제: 증권사 마진 확인</h4>
+<div class="calc">
+<div>같은 날 Tesouro PF32 매수 수익률 12.98%, 국내 증권사 제시 12.70%</div>
+<div>마진 = 0.28%p → 5.17년 보유 시 누적 약 1.4%의 수익 차이</div>
+</div></div>
+</article>
+
+<article class="term">
+<h3>중개수수료 <small>키움증권 산식</small></h3>
+<p class="def">키움 안내 기준 수수료는 0.1% × 잔존일 ÷ 365입니다. 잔존만기가 길수록 커집니다.</p>
+<div class="ex"><h4>예제</h4>
+<div class="tw"><table>
+<tr><th>종목</th><th class="n">잔존</th><th class="n">수수료</th><th class="n">1천만 원 기준</th></tr>
+<tr><td>PF32 (LTN 2032)</td><td class="n">약 5.2년</td><td class="n">약 0.52%</td><td class="n">약 5.2만 원</td></tr>
+<tr><td>NTN-F 2033</td><td class="n">약 6.2년</td><td class="n">약 0.62%</td><td class="n">약 6.2만 원</td></tr>
+<tr><td>NTN-F 2037</td><td class="n">약 10.2년</td><td class="n">약 1.02%</td><td class="n">약 10.2만 원</td></tr>
+</table></div>
+<div class="calc"><div>연환산하면 어느 종목이든 약 0.1%p → 매수 기준 수익률을 0.1~0.3%p 보수적으로 잡음</div></div></div>
+</article>
+
+<article class="term">
+<h3>이자 재투자 조건 <small>키움 1,200헤알 기준</small></h3>
+<p class="def">키움은 반기 이자가 1,200헤알 이상일 때만 헤알로 재투자할 수 있고, 그보다 적으면 달러로 환전해 지급합니다.</p>
+<div class="ex"><h4>예제</h4>
+<div class="calc">
+<div>NTN-F 1단위 반기 이자 48.81헤알</div>
+<div>필요 수량 = 1,200 ÷ 48.81 = 24.6 → <span class="r">25단위 이상</span></div>
+<div>25단위 매수 금액 ≈ 2.2만 헤알 ≈ 570만 원 (작성 시점 가격·환율 기준)</div>
+<div>300만 원어치만 사면 이자는 달러로 지급 → 원화로 쓰려면 환전 비용 한 번 더</div>
+</div></div>
+</article>
+
+<article class="term">
+<h3>달러표시 브라질 국채 <small>Brazil USD global bond</small></h3>
+<p class="def">브라질 정부가 달러로 발행한 국채입니다. 헤알 환위험이 없고 금리는 헤알채보다 낮습니다.</p>
+<div class="ex"><h4>예제: 헤알채와 달러채 중 무엇이 나은가</h4>
+<div class="calc">
+<div>헤알채 13.0%, 달러채 6.5%</div>
+<div>손익분기 헤알 약세 = 1.13 ÷ 1.065 − 1 = <span class="r">연 6.1%</span></div>
+<div>헤알이 달러 대비 연 6.1%보다 덜 약해지면 헤알채, 더 약해지면 달러채가 유리</div>
+</div></div>
+</article>
+</section>
+
+<!-- 5 -->
+<section class="part" id="gl-us">
+<h2>5. 미국 국채시장과 유동성</h2>
+
+<article class="term">
+<h3>T-bill, Note, Bond <small>미국 국채 만기 구분</small></h3>
+<p class="def">T-bill은 1년 이하 할인채, Note는 2~10년 이표채, Bond는 20~30년 이표채입니다.</p>
+<div class="ex"><h4>예제: 3개월(91일) T-bill, 가격 99.10</h4>
+<div class="calc">
+<div>할인율 기준(공시 방식) = (100 − 99.10) ÷ 100 × 360 ÷ 91 = 3.56%</div>
+<div>실제 투자수익률 = 0.90 ÷ 99.10 × 365 ÷ 91 = <span class="r">3.64%</span></div>
+</div></div>
+<p class="pt"><b>실전:</b> T-bill 공시 금리는 실제 수익률보다 약간 낮게 보입니다. 예금 금리와 비교할 때는 투자수익률을 씁니다.</p>
+</article>
+
+<article class="term">
+<h3>입찰 Tail <small>auction tail</small></h3>
+<p class="def">낙찰금리가 입찰 직전 시장금리(When-issued)보다 높게 나온 폭입니다. 수요가 약했다는 신호입니다. 반대로 낮게 나오면 stop-through(수요 강함)라고 합니다.</p>
+<div class="ex"><h4>예제</h4>
+<div class="calc">
+<div>10년물 입찰 직전 시장금리 4.250%, 낙찰금리 4.280%</div>
+<div class="r">Tail = 3bp → 수요 부진, 시장금리 추가 상승 압력</div>
+</div></div>
+</article>
+
+<article class="term">
+<h3>응찰률과 간접입찰 <small>bid-to-cover, indirect bidders</small></h3>
+<p class="def">응찰률은 응찰 총액 ÷ 발행액입니다. 간접입찰은 주로 해외 중앙은행 등이 대리 응찰한 몫으로, 해외 수요를 보여줍니다.</p>
+<div class="ex"><h4>예제</h4>
+<div class="calc">
+<div>발행 700억 달러, 응찰 1,750억 달러 → 응찰률 2.5배</div>
+<div>낙찰 중 간접입찰 70% → 해외 수요 양호</div>
+<div>응찰률 2.2배, 간접입찰 60%로 하락 + tail 발생 → 수요 약화 경고</div>
+</div></div>
+</article>
+
+<article class="term">
+<h3>SOFR <small>Secured Overnight Financing Rate</small></h3>
+<p class="def">국채를 담보로 하루 빌리는 자금의 금리입니다. 미국 단기자금 사정의 기준 지표입니다.</p>
+<div class="ex"><h4>예제</h4>
+<div class="calc">
+<div>1억 달러를 SOFR 3.65%로 하루 빌리면 이자 = 1억 × 3.65% ÷ 360 = 10,139달러</div>
+<div>분기말에 SOFR이 기준금리 상단을 넘어 튀면 단기자금 부족 신호</div>
+</div></div>
+</article>
+
+<article class="term">
+<h3>ON RRP (역레포) <small>Overnight Reverse Repo</small></h3>
+<p class="def">MMF 등이 남는 돈을 연준에 하루씩 맡기는 창구입니다. 잔액은 시장에 쌓인 여유자금, 즉 충격 완충판입니다.</p>
+<div class="ex"><h4>예제</h4>
+<div class="calc">
+<div>2023년 약 2.5조 달러 → 2026년 거의 0</div>
+<div>잔액이 많을 때: 재무부가 국채를 더 팔아도 역레포 돈이 흡수</div>
+<div>잔액이 0일 때: 같은 발행이 은행 준비금을 직접 줄여 금리 급등 위험</div>
+</div></div>
+</article>
+
+<article class="term">
+<h3>TGA <small>Treasury General Account</small></h3>
+<p class="def">미국 재무부가 연준에 둔 현금 계좌입니다. 늘면 시중 유동성을 흡수하고, 줄면 공급합니다.</p>
+<div class="ex"><h4>예제</h4>
+<div class="calc">
+<div>재무부가 국채 1,000억 달러 발행 → TGA +1,000억 → 은행 준비금 −1,000억 (유동성 흡수)</div>
+<div>정부 지출로 TGA 2,000억 감소 → 은행 준비금 +2,000억 (유동성 공급)</div>
+</div></div>
+</article>
+
+<article class="term">
+<h3>자주 쓰는 FRED 코드</h3>
+<div class="tw"><table>
+<tr><th>코드</th><th>내용</th><th>보는 이유</th></tr>
+<tr><td>DGS10 / DGS2</td><td>10년·2년 국채 금리</td><td>금리 수준, 장단기 금리차</td></tr>
+<tr><td>DFII10</td><td>10년 TIPS 수익률</td><td>실질금리, 장기채 매수 트리거</td></tr>
+<tr><td>T10YIE</td><td>10년 기대인플레</td><td>명목채와 TIPS 선택</td></tr>
+<tr><td>ACMTP10</td><td>10년 텀프리미엄</td><td>장기금리 상승 원인 분해</td></tr>
+<tr><td>SOFR</td><td>담보 하루 자금 금리</td><td>단기자금 경색</td></tr>
+<tr><td>RRPONTSYD</td><td>ON RRP 잔액</td><td>완충 자금</td></tr>
+<tr><td>WTREGEN</td><td>TGA 잔액</td><td>유동성 흡수·공급</td></tr>
+</table></div>
+</article>
+</section>
+
+<!-- 6 -->
+<section class="part" id="gl-tax">
+<h2>6. 세금과 계좌</h2>
+<p class="lead">국내 개인 거주자 기준이며, 세법은 바뀔 수 있습니다.</p>
+
+<article class="term">
+<h3>이자소득 원천징수 <small>15.4%</small></h3>
+<p class="def">국내에서 받는 채권 이자는 소득세 14%와 지방세 1.4%, 합계 15.4%를 떼고 지급됩니다.</p>
+<div class="ex"><h4>예제</h4>
+<div class="calc"><div>국내 회사채 이자 100만 원 → 세금 15.4만 원 → 실수령 84.6만 원</div></div></div>
+</article>
+
+<article class="term">
+<h3>채권 매매차익 비과세</h3>
+<p class="def">국내 개인이 채권을 사고팔거나 할인 매입해 얻은 가격 차익은 과세되지 않습니다. 과세는 이자에만 붙습니다.</p>
+<div class="ex"><h4>예제: 저쿠폰 채권의 절세 효과</h4>
+<div class="calc">
+<div>A: 표면 5%, 가격 100 → 연 수익 5 모두 이자 → 세금 0.77, 세후 4.23</div>
+<div>B: 표면 1%, 가격 96, 1년 뒤 100 상환 → 이자 1(세금 0.15) + 차익 4(비과세)</div>
+<div>B 세후 = (1 − 0.15 + 4) ÷ 96 = <span class="r">5.05%</span> vs A 세후 4.23%</div>
+</div></div>
+<p class="pt"><b>실전:</b> 일반계좌에서는 표면금리가 낮고 할인 거래되는 국채가 세후로 유리합니다.</p>
+</article>
+
+<article class="term">
+<h3>조세조약 비과세 <small>한·브라질 조세조약 제11조</small></h3>
+<p class="def">브라질 정부 채권의 이자(할인채의 할인액 포함)는 브라질에만 과세권이 있어 국내에서 과세되지 않습니다. 일반 위탁계좌에서 직접 보유할 때만 적용됩니다.</p>
+<div class="ex"><h4>예제</h4>
+<div class="tw"><table>
+<tr><th>보유 방식</th><th class="n">이자 100만 원의 세금</th></tr>
+<tr><td>일반계좌 직접 보유</td><td class="n">0원</td></tr>
+<tr><td>브라질 국채 펀드</td><td class="n">분배금 과세 15.4만 원</td></tr>
+<tr><td>ISA·IRP 안에서 보유</td><td class="n">조약 혜택 없이 계좌 규칙대로 과세</td></tr>
+</table></div></div>
+</article>
+
+<article class="term">
+<h3>금융소득종합과세</h3>
+<p class="def">이자·배당 합계가 연 2천만 원을 넘으면 넘는 부분을 다른 소득과 합쳐 누진세율로 과세합니다. 비과세 소득은 합산에서 빠집니다.</p>
+<div class="ex"><h4>예제</h4>
+<div class="calc">
+<div>국내 이자 1,800만 원 + 배당 700만 원 = 2,500만 원 → 500만 원이 종합과세 대상</div>
+<div>같은 사람이 브라질 국채 이자 600만 원을 추가로 받아도 합산 금액은 2,500만 원 그대로</div>
+</div></div>
+</article>
+
+<article class="term">
+<h3>ISA와 IRP의 과세</h3>
+<p class="def">ISA는 일정 한도까지 비과세, 초과분은 9.9% 분리과세입니다. IRP는 운용 중 과세가 미뤄지고, 연금으로 받을 때 낮은 세율로 과세됩니다.</p>
+<div class="ex"><h4>예제</h4>
+<div class="calc">
+<div>ISA(일반형) 순이익 500만 원 → 200만 원 비과세, 300만 원 × 9.9% = 29.7만 원</div>
+<div>같은 500만 원을 일반계좌 이자로 받으면 15.4% = 77만 원</div>
+<div>퇴직금 재원 IRP를 연금으로 수령 → 이연퇴직소득세의 60~70%만 과세</div>
+</div></div>
+<p class="pt"><b>실전:</b> 원래 과세되는 이자는 ISA·IRP에, 이미 비과세인 브라질 국채와 매매차익 중심 채권은 일반계좌에 둡니다.</p>
+</article>
+
+<article class="term">
+<h3>해외금융계좌 신고</h3>
+<p class="def">해외 금융계좌 잔액 합계가 연중 하루라도 5억 원을 넘으면 다음 해 6월에 신고해야 합니다.</p>
+<div class="ex"><h4>예제</h4>
+<div class="calc">
+<div>국내 증권사를 통해 산 브라질 국채 → 국내 계좌이므로 신고 대상 아님</div>
+<div>브라질 현지 증권사 계좌에 6억 원 보유 → 신고 대상</div>
+</div></div>
+</article>
+</section>
+
+<!-- 7 -->
+<section class="part" id="gl-pairs">
+<h2>7. 헷갈리는 짝</h2>
+<div class="tw"><table>
+<tr><th>짝</th><th>차이</th><th>한 줄 예</th></tr>
+<tr><td>표면금리 vs YTM</td><td>발행 조건 vs 지금 산 사람의 수익률</td><td>표면 3% 채권을 97.23에 사면 YTM 4%</td></tr>
+<tr><td>%p vs %</td><td>금리 숫자의 차이 vs 비율 변화</td><td>3%→4%는 1%p(100bp)</td></tr>
+<tr><td>현재수익률 vs YTM</td><td>만기 차익 미반영 vs 반영</td><td>3.09% vs 4.00%</td></tr>
+<tr><td>맥컬리 vs 수정 듀레이션</td><td>평균 회수 시점(년) vs 가격 민감도(%)</td><td>2.91년 vs 2.80</td></tr>
+<tr><td>클린 vs 더티 가격</td><td>경과이자 제외 vs 포함</td><td>900 vs 924.54헤알</td></tr>
+<tr><td>할인율 vs 투자수익률</td><td>T-bill 공시 방식 vs 실제 수익</td><td>3.56% vs 3.64%</td></tr>
+<tr><td>헤알채 vs 달러채</td><td>환위험 포함 고금리 vs 환위험 제거 저금리</td><td>손익분기 헤알 약세 연 6.1%</td></tr>
+<tr><td>직접 보유 vs 펀드</td><td>조약 비과세 vs 분배금 과세</td><td>이자 100만 원: 0원 vs 15.4만 원</td></tr>
+</table></div>
+</section>
+
+</div>
+<p class="gl-foot">작성 2026년 10월 22일. 예제의 가정값은 계산 원리 설명용이며 투자 권유가 아닙니다. 세법·증권사 조건은 실행 전 증권사와 세무사에게 확인하세요.</p>

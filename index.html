@@ -105,6 +105,17 @@ svg text{fill:var(--ink);font-size:10px}
   input{width:46px!important;font-size:9px!important;padding:1px 2px!important}
   td.r{white-space:nowrap!important}
   tr{break-inside:avoid}}
+/* 용어정리 탭(glossary.html 조각) */
+.gl{--muted:#5a6573;--rule:var(--line);--accent:#1f4e79;--accent-soft:#e7eef6;--calc:var(--soft);--warn:#8a4b08;--warn-soft:#fbf1e3;line-height:1.7;word-break:keep-all}
+@media (prefers-color-scheme:dark){.gl{--muted:#9aa5b3;--accent:#8db8e3;--accent-soft:#1c2a3a;--warn:#e3a35a;--warn-soft:#2a2116}}
+.gl .gl-toc ol{list-style:none;margin:0 0 14px;padding:0;display:flex;flex-wrap:wrap;gap:6px 14px}.gl .gl-toc a{color:var(--ink);text-decoration:none;border-bottom:2px solid var(--line)}.gl .gl-toc .sub{display:none}
+.gl section.part{margin-bottom:34px}.gl section.part{padding:0;border:0;background:none}.gl section.part>h2{background:none;color:var(--ink);padding:0 0 6px;font-size:20px;border-bottom:1px solid var(--ink);padding-bottom:6px;margin:0 0 8px}.gl p.lead{color:var(--muted);margin:6px 0 14px}
+.gl article.term{padding:16px 0;border-bottom:1px solid var(--line)}.gl article.term h3{font-size:16px;margin:0;display:flex;flex-wrap:wrap;gap:2px 10px;align-items:baseline}.gl article.term h3 small{font-size:12.5px;font-weight:500;color:var(--muted)}
+.gl .def{margin:6px 0 10px}.gl .ex{background:var(--calc);border:1px solid var(--line);border-left:4px solid var(--accent);padding:10px 14px;margin:10px 0}.gl .ex h4{margin:0 0 4px;font-size:13px;color:var(--accent)}.gl .ex p{margin:6px 0}
+.gl .calc{font-size:13.5px;line-height:1.85;overflow-x:auto}.gl .calc div{white-space:nowrap}.gl .calc .r{font-weight:700}
+.gl .pt{font-size:13.5px;margin:8px 0 0;padding-left:10px;border-left:2px solid var(--line)}.gl .pt b{color:var(--accent)}
+.gl .tw{overflow-x:auto;margin:8px 0}.gl table{border-collapse:collapse;font-size:13px;min-width:400px;width:100%}.gl th,.gl td{border:1px solid var(--line);padding:5px 9px;text-align:left;vertical-align:top}.gl th{background:var(--accent-soft)}.gl td.n,.gl th.n{text-align:right}
+.gl .gl-foot{color:var(--muted);font-size:12.5px;border-top:1px solid var(--line);padding-top:10px}
 </style>
 </head>
 <body>
@@ -137,7 +148,7 @@ const pct = (n, d = 2) => n == null || isNaN(n) ? "—" : (n >= 0 ? "+" : "") + 
 const brDate = iso => iso ? iso.slice(8) + "/" + iso.slice(5, 7) + "/" + iso.slice(0, 4) : "—";
 let D, C, tab = localStorage.getItem("tab") || "overview";
 
-const TABS = [["overview","01 최신변동"],["stages","02 분할매수"],["fx","03 환율"],["scen","04 시나리오"],["port","05 헤알·달러·5:5 비교"],["bonds","06 국채 전체"],["settings","설정"],["help","도움말"]];
+const TABS = [["overview","01 최신변동"],["stages","02 분할매수"],["fx","03 환율"],["scen","04 시나리오"],["port","05 헤알·달러·5:5 비교"],["bonds","06 국채 전체"],["settings","설정"],["help","도움말"],["gloss","용어정리"]];
 
 const LOCAL = ["127.0.0.1", "localhost"].includes(location.hostname);
 
@@ -1353,6 +1364,15 @@ V.help = m => {
       ${HELP.map(s => `<button onclick="helpGo('${s.k}')">${s.t.split(" — ")[0]}</button>`).join("")}</div>
     ${list.length ? list.map(s => `<details class=fold id="help-${s.k}" ${helpOpen.has(s.k) || q ? "open" : ""} ontoggle="this.open?helpOpen.add('${s.k}'):helpOpen.delete('${s.k}')"><summary>${s.t}</summary><div>${s.h}</div></details>`).join("") : "<div class=note>검색 결과가 없습니다.</div>"}
     <div class=note>이 설명서는 개념과 읽는 법만 담고 있으며 개인 설정값은 포함하지 않습니다. 앱의 계산 규칙이 바뀌면 이 탭도 함께 갱신됩니다.</div></div></section>`;
+};
+
+let glHtml = null, glBusy = false;
+function glGo(k) { const e = document.getElementById("gl-" + k); if (e) e.scrollIntoView({behavior: "smooth", block: "start"}); }
+V.gloss = m => {
+  if (glHtml == null && !glBusy) { glBusy = true; fetch("glossary.html", {cache: "no-cache"}).then(r => r.ok ? r.text() : Promise.reject()).then(t => { glHtml = t; }).catch(() => { glHtml = "<p>용어정리를 불러오지 못했습니다. 새로고침하세요.</p>"; }).finally(() => { glBusy = false; if (tab === "gloss") render(); }); }
+  return `<section><h2>용어정리 — 예제로 익히는 채권 계산</h2><div class=body>
+    <div class=note>예제 숫자는 계산 원리를 보여주는 가정값이며 현재 시장값이 아닙니다. 투자 권유가 아닌 학습 자료입니다.</div>
+    <div class=gl>${glHtml == null ? "불러오는 중…" : glHtml}</div></div></section>`;
 };
 
 const CFG_KEYS = ["stages", "target_real", "extra_fx_rows", "fx_range", "buy_real", "stop_real", "mk", "cal_plan", "cal_zone", "cal_watch", "pol", "usd_inc", "rc3", "pos", "sim"];
