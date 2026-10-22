@@ -106,6 +106,7 @@ svg text{fill:var(--ink);font-size:10px}
   td.r{white-space:nowrap!important}
   tr{break-inside:avoid}}
 /* 용어정리 탭(glossary.html 조각) */
+a.gll{font-size:12px;color:#1f4e79;white-space:nowrap}@media (prefers-color-scheme:dark){a.gll{color:#8db8e3}}
 .gl [hidden]{display:none!important}
 .glsug{border:1px solid var(--ink);max-height:46vh;overflow-y:auto;margin:2px 0 10px;background:var(--paper)}.glsug .glc{font-size:12px;padding:5px 10px;background:var(--soft)}
 .glsug button{display:block;width:100%;text-align:left;border:0;border-top:1px solid var(--line);background:none;color:var(--ink);padding:8px 10px;font:inherit;font-size:14px;cursor:pointer}.glsug button:hover{background:var(--soft)}.glsug button small{color:#777;margin-left:6px}.glsug button span{display:block;font-size:12.5px;color:#777}.glsug mark{background:#ffe38a;color:#000}
@@ -1230,13 +1231,13 @@ const HELP = [
     <p><b>체결 후</b> — 설정 탭에 체결가·날짜·체결 체크를 입력하고, 폰에도 "설정 복사 → 붙여넣기"를 하세요. <b>주 1회</b> — 달러채 시세 갱신, 기준값 재검토, 큰 이벤트 전후 04-1 시나리오 확률 확인.</p>`},
   {k: "terms", t: "용어·개념 사전", h: `
     <div class=tbl><table><thead><tr><th>용어</th><th>뜻</th><th>쓰이는 곳</th></tr></thead><tbody>
-    <tr><td><b>PU</b></td><td>채권 1단위 가격. PF32는 만기에 1,000헤알. 가격이 오르면 수익률(YTM)은 내려갑니다.</td><td>전체</td></tr>
-    <tr><td><b>YTM</b>(만기수익률)</td><td>지금 사서 만기까지 보유할 때의 연 수익률(명목). 제로쿠폰이라 PU와 1:1로 연결됩니다.</td><td>01·02·04</td></tr>
-    <tr><td><b>수익률 표기</b><br>(명목·실질·원화)</td><td>화면의 모든 수익률에는 종류 표시가 붙습니다. <b>명목</b> = 현지통화 기준, 물가·환율 보정 없음(YTM, 이자수익률). <b>실질</b> = 현지통화 기준에 물가만 보정(환율 미반영). <b>원화 명목</b> = 환율을 반영하고 물가는 보정하지 않음(원화 평가 변동, 12개월 EV). ${RT.kr} = 환율 반영 후 한국 물가까지 보정(손절·정합 기준, 04-2·05). 표시 위에 마우스를 올리면 설명이 나옵니다. 06 탭의 IPCA+·Renda+·Educa+ 수익률은 물가에 더해지는 실질금리라 <b>실질</b>, Prefixado·Selic은 <b>명목</b>입니다.</td><td>전체</td></tr>
-    <tr><td><b>듀레이션</b>(수정)</td><td>금리가 1%p 오를 때 가격이 대략 몇 % 내리는지의 민감도(수정 듀레이션 ≈ 가격 변동률 ÷ 금리 변동). PF32는 제로쿠폰이라 잔존연수 ÷ (1+YTM), 달러채는 반기 이표 현금흐름을 직접 할인해 계산합니다(매콜리 듀레이션 ÷ (1+YTM÷2)). 값이 클수록 금리 변화에 가격이 크게 움직입니다. 만기까지 보유하면 가격 변동은 만기에 사라집니다.</td><td>01·04-1</td></tr>
-    <tr><td><b>실질 YTM</b></td><td>(1+명목) ÷ (1+물가) − 1. 물가를 뺀 구매력 기준 수익률. 헤알채는 브라질 물가(Focus 기대), 달러채는 미국 물가(국채 손익분기)를 뺍니다.</td><td>01·03</td></tr>
+    <tr><td><b>PU</b><br><a class=gll href="javascript:glJump('할인채')">용어정리: 할인채 ▸</a></td><td>채권 1단위 가격. PF32는 만기에 1,000헤알. 가격이 오르면 수익률(YTM)은 내려갑니다.</td><td>전체</td></tr>
+    <tr><td><b>YTM</b>(만기수익률)<br><a class=gll href="javascript:glJump('만기수익률')">용어정리: YTM ▸</a></td><td>지금 사서 만기까지 보유할 때의 연 수익률(명목). 제로쿠폰이라 PU와 1:1로 연결됩니다.</td><td>01·02·04</td></tr>
+    <tr><td><b>수익률 표기</b><br>(명목·실질·원화)<br><a class=gll href="javascript:glJump('실질금리')">용어정리: 실질금리 ▸</a></td><td>화면의 모든 수익률에는 종류 표시가 붙습니다. <b>명목</b> = 현지통화 기준, 물가·환율 보정 없음(YTM, 이자수익률). <b>실질</b> = 현지통화 기준에 물가만 보정(환율 미반영). <b>원화 명목</b> = 환율을 반영하고 물가는 보정하지 않음(원화 평가 변동, 12개월 EV). ${RT.kr} = 환율 반영 후 한국 물가까지 보정(손절·정합 기준, 04-2·05). 표시 위에 마우스를 올리면 설명이 나옵니다. 06 탭의 IPCA+·Renda+·Educa+ 수익률은 물가에 더해지는 실질금리라 <b>실질</b>, Prefixado·Selic은 <b>명목</b>입니다.</td><td>전체</td></tr>
+    <tr><td><b>듀레이션</b>(수정)<br><a class=gll href="javascript:glJump('듀레이션')">용어정리: 듀레이션 ▸</a></td><td>금리가 1%p 오를 때 가격이 대략 몇 % 내리는지의 민감도(수정 듀레이션 ≈ 가격 변동률 ÷ 금리 변동). PF32는 제로쿠폰이라 잔존연수 ÷ (1+YTM), 달러채는 반기 이표 현금흐름을 직접 할인해 계산합니다(매콜리 듀레이션 ÷ (1+YTM÷2)). 값이 클수록 금리 변화에 가격이 크게 움직입니다. 만기까지 보유하면 가격 변동은 만기에 사라집니다.</td><td>01·04-1</td></tr>
+    <tr><td><b>실질 YTM</b><br><a class=gll href="javascript:glJump('실질금리')">용어정리: 실질금리 ▸</a></td><td>(1+명목) ÷ (1+물가) − 1. 물가를 뺀 구매력 기준 수익률. 헤알채는 브라질 물가(Focus 기대), 달러채는 미국 물가(국채 손익분기)를 뺍니다.</td><td>01·03</td></tr>
     <tr><td>${RT.kr}</td><td>(1+YTM) × (1+환율 변동) ÷ (1+한국 물가) − 1. 환율 위험을 반영한 내 기준 수익률. 환율 변동은 "가정"입니다.</td><td>01·04-2·05</td></tr>
-    <tr><td><b>환율 가정 4종</b></td><td>환율 유지 / 5년 연평균 / 헤알 약세(최근 5년 중 약세였던 구간의 평균) / <b>원화 강세형</b>(원화가 강해져 헤알·달러가 함께 약세 — 04-2의 "투자자 최악형"). 이 중 <b>최악</b>값을 규칙 판단에 씁니다. 원화 강세형은 달러채·5:5의 최악값을 크게 낮춥니다. 5년 최악이나 위기 때는 이보다 훨씬 나쁠 수 있습니다.</td><td>01·02</td></tr>
+    <tr><td><b>환율 가정 4종</b><br><a class=gll href="javascript:glJump('환위험')">용어정리: 환위험 ▸</a></td><td>환율 유지 / 5년 연평균 / 헤알 약세(최근 5년 중 약세였던 구간의 평균) / <b>원화 강세형</b>(원화가 강해져 헤알·달러가 함께 약세 — 04-2의 "투자자 최악형"). 이 중 <b>최악</b>값을 규칙 판단에 씁니다. 원화 강세형은 달러채·5:5의 최악값을 크게 낮춥니다. 5년 최악이나 위기 때는 이보다 훨씬 나쁠 수 있습니다.</td><td>01·02</td></tr>
     <tr><td><b>5:5</b></td><td>PF32 50% + 달러표시채 50%. 헤알 약세 위험을 달러채로 일부 헤지하는 구성(재조정·환헤지 없음).</td><td>01·05</td></tr>
     <tr><td><b>매수 지표(가격선)</b></td><td>실질 수익률이 기준(X%)이 되는 가격. <b>가격이 선 이하면 ON</b>(가격이 낮을수록 수익률이 높으므로).</td><td>01 알람 박스·차트 초록 파선</td></tr>
     <tr><td><b>손절 규칙</b></td><td>"환율 가정 4종 중 어느 경우라도 ${RT.kr}이 기준(기본 4.5%) 미만이면 손절 구간". 한계 환율 = 실질이 정확히 기준이 되는 연 환율 변동.</td><td>01 손절 지표·02 손절 카드</td></tr>
@@ -1246,6 +1247,7 @@ const HELP = [
     <tr><td><b>매수 사다리</b></td><td>미체결 단계를 현 지정가·매수 기준선·정합선 같은 여러 가격에 나눠 거는 계획.</td><td>02</td></tr>
     <tr><td><b>과거 도달 빈도</b></td><td>잔존 약 5년 Prefixado의 2016-10 이후 이력에서 "N개월 안에 금리가 한 번이라도 +X bp 올랐던 비율"(하한). 미래를 보장하지 않습니다.</td><td>02</td></tr>
     </tbody></table></div>
+    <p class=note>금리·듀레이션·경과이자·세금처럼 <b>일반 채권 용어</b>는 <a href="javascript:glJump()">용어정리 탭 ▸</a>에서 예제 계산과 함께 찾아볼 수 있습니다(위 표의 「용어정리」 링크는 해당 용어로 바로 이동). 이 표는 이 앱에서만 쓰는 용어를 다룹니다.</p>
     <p class=note>가격이 오르면 수익률이 내려갑니다. 그래서 "실질 X%가 되는 가격선"은 X가 높을수록 <b>아래</b>에, X가 낮을수록 <b>위</b>에 놓입니다. 적색 점선(실질 4.5%)은 현재가 위쪽에 있으면 "수익률이 소진되는 지점", 아래쪽에 있으면 "이미 기준 미만"을 뜻합니다.</p>`},
   {k: "t01", t: "01 최신변동 — 오늘의 상황판", h: `
     <p><b>의도</b> — 매일 아침 이 한 화면으로 "지금 무엇이 켜져 있고, 무엇을 해야 하는가"를 판단합니다.</p>
@@ -1371,6 +1373,14 @@ V.help = m => {
 };
 
 let glHtml = null, glBusy = false, glQ = "";
+function glJump(name) {
+  tab = "gloss"; try { localStorage.setItem("tab", tab); } catch (e) {} render(); scrollTo(0, 0);
+  if (!name) return;
+  let n = 0; const t = setInterval(() => {
+    const a = [...document.querySelectorAll(".gl article.term")].findIndex(x => x.querySelector("h3").textContent.trim().startsWith(name));
+    if (a >= 0) { clearInterval(t); glFilter(); glPick(a); } else if (++n > 40) clearInterval(t);
+  }, 100);
+}
 function glGo(k) { const e = document.getElementById("gl-" + k); if (e) e.scrollIntoView({behavior: "smooth", block: "start"}); }
 V.gloss = m => {
   if (glHtml == null && !glBusy) { glBusy = true; fetch("glossary.html", {cache: "no-cache"}).then(r => r.ok ? r.text() : Promise.reject()).then(t => { glHtml = t; }).catch(() => { glHtml = "<p>용어정리를 불러오지 못했습니다. 새로고침하세요.</p>"; }).finally(() => { glBusy = false; if (tab === "gloss") render(); }); }
