@@ -1180,6 +1180,57 @@ V.port = m => {
   </div></section>`;
 };
 
+// ---------- 06 탭: 국고채 비교(원화채, 환율 위험 없음) ----------
+const KTB_DEF = {n: "국고채권01500-5003(20-2)", cpn: 1.5, mat: "2050-03-10", ytm: 4.1, mp: 4.265, px: 6130, asof: "2026-10-22"};   // 증권사 화면의 공개 시세(수동 입력, 기준일 표시)
+const KTB = () => ({...KTB_DEF, ...(C.ktb || {})});
+const KTB_TAX = 0.154;   // 이자소득세(매매차익은 비과세로 가정)
+function ktbFlows(k, from) {   // 표면금리 반기 이표, 만기일과 같은 날짜에 지급, 만기에 액면 100
+  const [Y, Mo, Dd] = k.mat.split("-").map(Number), f = Date.UTC(from.getFullYear(), from.getMonth(), from.getDate()), out = [];
+  for (let i = 0; i < 200; i++) { const d = Date.UTC(Y, Mo - 1 - 6 * i, Dd); if (d <= f) break; out.push({t: (d - f) / 864e5 / 365, i}); }
+  return out.reverse().map((x, j, a) => ({t: x.t, c: k.cpn / 2, last: j === a.length - 1}));
+}
+function ktbCalc(m) {
+  const k = KTB(), from = new Date(), fl = ktbFlows(k, from); if (!fl.length) throw new Error("만기 지남");
+  const pv = (y, fn) => fl.reduce((a, x) => a + fn(x) / Math.pow(1 + y / 200, 2 * x.t), 0) + 100 / Math.pow(1 + y / 200, 2 * fl[fl.length - 1].t);
+  const P = y => pv(y, x => x.c), mod = y => (fl.reduce((a, x) => a + x.t * x.c / Math.pow(1 + y / 200, 2 * x.t), 0) + fl[fl.length - 1].t * 100 / Math.pow(1 + y / 200, 2 * fl[fl.length - 1].t)) / P(y) / (1 + y / 200);
+  const P0 = P(k.ytm), T = fl[fl.length - 1].t, kN = INF().kr, eff = (Math.pow(1 + k.ytm / 200, 2) - 1) * 100;
+  const irr = (cf) => { let lo = -0.5, hi = 1; for (let n = 0; n < 80; n++) { const r = (lo + hi) / 2, v = cf.reduce((a, x) => a + x.c / Math.pow(1 + r, x.t), 0) - P0; if (v > 0) lo = r; else hi = r; } return ((lo + hi) / 2) * 100; };
+  const at = irr(fl.map(x => ({t: x.t, c: x.c * (1 - KTB_TAX) + (x.last ? 100 : 0)})));
+  return {k, T, P0, mod: mod(k.ytm), up: (P(k.ytm + 1) / P0 - 1) * 100, dn: (P(k.ytm - 1) / P0 - 1) * 100, eff, kN, real: ((1 + eff / 100) / (1 + kN / 100) - 1) * 100,
+    atN: at, atReal: ((1 + at / 100) / (1 + kN / 100) - 1) * 100, mpP: k.mp ? P(k.mp) : null, prem: k.mp ? (P0 / P(k.mp) - 1) * 100 : null,
+    age: Math.floor((Date.now() - new Date(k.asof + "T00:00:00").getTime()) / 864e5)};
+}
+function ktbEdit(el) {
+  const key = el.dataset.s, txt = ["n", "mat", "asof"].includes(key); if (!C.ktb) C.ktb = {};
+  const v = txt ? el.value.trim() : parseFloat(el.value);
+  if (txt ? !v : isNaN(v)) delete C.ktb[key]; else C.ktb[key] = v;
+  try { localStorage.setItem("pf32cfg", JSON.stringify(C)); } catch (e) {}
+  if (LOCAL) fetch("/api/config", {method: "POST", body: JSON.stringify(C)}).catch(() => {});
+  render(true);
+}
+function ktbReset() { delete C.ktb; try { localStorage.setItem("pf32cfg", JSON.stringify(C)); } catch (e) {} if (LOCAL) fetch("/api/config", {method: "POST", body: JSON.stringify(C)}).catch(() => {}); render(); }
+let ktbOpen = true, bondAll = false;
+function ktbSection(m) {
+  let r; try { r = ktbCalc(m); } catch (e) { return `<div class=note>국고채 입력(만기일 등)을 확인하세요.</div>`; }
+  const k = r.k, sr = SR(), kw = krwAt(m), dp = durPanels(m), bad = v => v < sr ? ' style="color:var(--bad);font-weight:700"' : "", c = v => `<td class=r${bad(v)}>${f2(v, 2)}%</td>`;
+  const inp = (key, v, w, t) => `<input ${t || "type=number step=any"} data-s="${key}" value="${v == null ? "" : v}" onchange="ktbEdit(this)" style="width:${w}px">`;
+  const row = (nm, d, sens, vals) => `<tr><td>${nm}</td><td class=r>${d == null ? "-" : f2(d, 1)}</td>${vals.map(c).join("")}<td class=r><small>${sens}</small></td></tr>`;
+  const sg = x => x ? sensTxt(x) : "-";
+  return `<details class=fold ${ktbOpen ? "open" : ""} ontoggle="ktbOpen=this.open"><summary><b>국고채 비교</b> — ${k.n} · 매수수익률 ${f2(k.ytm, 3)}% (펼치기)</summary><div>
+    <div class=tbl><table class=mono><thead><tr><th>종목명</th><th>표면%</th><th>만기(YYYY-MM-DD)</th><th>매수수익률%</th><th>민평수익률%</th><th>기준일</th></tr></thead><tbody><tr>
+      <td>${inp("n", k.n, 190, "type=text")}</td><td>${inp("cpn", k.cpn, 60)}</td><td>${inp("mat", k.mat, 110, "type=text")}</td><td>${inp("ytm", k.ytm, 70)}</td><td>${inp("mp", k.mp, 70)}</td><td>${inp("asof", k.asof, 100, "type=text")}</td></tr></tbody></table></div>
+    <p class=noprint style="margin:4px 0"><button onclick="ktbReset()">기본값(예시 종목)으로</button> <small>증권사 화면의 값을 직접 입력합니다(자동 수집 아님). 기준일이 오래되면 아래 값은 현재와 다릅니다.</small></p>
+    ${r.age > 3 ? `<div class="callout bad">⚠ 입력 시세 기준일이 ${r.age}일 전입니다. 증권사 화면의 현재 수익률로 다시 입력하세요.</div>` : ""}
+    <div class="callout sum"><b>${f2(k.ytm, 3)}%</b> ${RT.n} (반기복리) → 연복리 <b>${f2(r.eff, 2)}%</b> · 한국 물가 ${f2(r.kN)}% 차감 시 ${RT.kr} <b>${f2(r.real, 2)}%</b> · 이자에 ${f2(KTB_TAX * 100, 1)}% 과세(매매차익 비과세 가정) 시 세후 ${RT.n} <b>${f2(r.atN, 2)}%</b> · 세후 ${RT.kr} <b>${f2(r.atReal, 2)}%</b><br>
+      <small>잔존 ${f2(r.T, 1)}년 · 수정 듀레이션 ${f2(r.mod, 1)} · 금리 ${sensTxt(r)} · 모델 가격 ${f2(r.P0, 2)}%(1만원당 ${f2(r.P0 * 100, 0)}원)${r.prem != null ? ` · 민평 ${f2(k.mp, 3)}% 대비 매수가가 <b>${sgn(r.prem)}</b>(민평가 ${f2(r.mpP * 100, 0)}원)` : ""}</small></div>
+    <div class=tbl><table class=mono><thead><tr><th>${RT.kr} 만기 보유 연율 · 세전</th><th class=r>수정<br>듀레이션</th>${stopCases().map((_, i) => `<th class=r>${["환율 유지", "5년 연평균", "헤알 약세", "원화 강세형"][i] || "케이스" + (i + 1)}</th>`).join("")}<th class=r>금리 ±1%p 가격</th></tr></thead><tbody>
+      ${row("<b>국고채</b> (환율 위험 없음)", r.mod, sensTxt(r), kw.names.map(() => r.real))}
+      ${row("① 헤알채 " + C.tracked.label, dp.pf.mod, sg(dp.pf), kw.now[0])}
+      ${row("② 달러채", dp.us ? dp.us.mod : null, sg(dp.us), kw.now[1])}
+      ${row("③ 5:5", dp.mix ? dp.mix.mod : null, sg(dp.mix), kw.now[2])}</tbody></table></div>
+    <div class=note>빨간색 = ${RT.kr} 손절 기준(${f2(sr, 1)}%) 미만. 만기가 서로 달라(국고채 ${f2(r.T, 1)}년 대 PF32 약 5년) 같은 기간 비교가 아닙니다. 한국 물가 ${f2(r.kN)}%를 만기까지 적용한 값이며 세전입니다. 4.1% 같은 수익률은 <b>만기 보유·이자 재투자 4.1%</b>일 때의 값이고 중도 매도 시 달라집니다.</div>
+  </div></details>`;
+}
 let bondQ = "";
 V.bonds = m => {
   const hasLive = D.live && D.live.length;
@@ -1188,11 +1239,15 @@ V.bonds = m => {
     : D.bonds.map(b => ({n: b.tipo + " " + b.venc.slice(-4), y: f2(b.taxa_compra) + "%", p: b.pu_compra, v: b.venc, mi: null, k: `${b.tipo}|${b.venc}`}));
   const rows = [...rows0.filter(r => trk.includes(r.k)).sort((a, b) => trk.indexOf(a.k) - trk.indexOf(b.k)), ...rows0.filter(r => !trk.includes(r.k))];   // 추적 종목 맨 위
   const q = bondQ.toLowerCase();
-  const fil = rows.filter(r => !q || (r.n + r.y + r.v).toLowerCase().includes(q));
+  const fil0 = rows.filter(r => !q || (r.n + r.y + r.v).toLowerCase().includes(q)), fil = q || bondAll ? fil0 : fil0.filter(r => trk.includes(r.k)), hid = fil0.length - fil.length;
+  const kt = KTB(), ktShow = !q || (kt.n + " 국고채 ktb").toLowerCase().includes(q);
   return `<section><h2>06 국채 전체 — ${hasLive ? "Investir CSV " + D.live_info.mtime.replace("T", " ") : "Tesouro Transparente 최신"}</h2><div class=body>
     <input id=q placeholder="검색 (예: Prefixado, IPCA, 2032)" value="${bondQ}" oninput="bondQ=this.value;render(true)">
+    ${ktbSection(m)}
     <div class=tbl style="margin-top:8px"><table class=mono><thead><tr><th>종목</th><th>수익률 ${RT.n}/${RT.r}</th><th class=r>단가 PU</th><th class=r>최소투자</th><th>만기</th></tr></thead><tbody>
+    ${ktShow ? `<tr class=hl style="font-weight:700"><td><span class=tag>국고채</span> ${kt.n}</td><td>${f2(kt.ytm, 3)}% ${RT.n}</td><td class=r>${(() => { try { return f2(ktbCalc(m).P0 * 100, 0) + "원/1만원"; } catch (e) { return "-"; } })()}</td><td class=r>-</td><td>${kt.mat}</td></tr>` : ""}
     ${fil.map(r => { const t = trk.includes(r.k); return `<tr class="${t ? "hl" : ""}" ${t ? 'style="font-weight:700"' : ""}><td>${r.k === mainKey ? '<span class="tag inv">PF32</span> ' : t ? '<span class=tag>추적</span> ' : ""}${r.n}</td><td>${r.y} ${rtBond(r.n)}</td><td class=r>${f2(r.p)}</td><td class=r>${r.mi != null ? f2(r.mi) : "—"}</td><td>${r.v}</td></tr>`; }).join("")}</tbody></table></div>
+    ${!q && hid > 0 ? `<p class=noprint style="margin:6px 0"><button onclick="bondAll=true;render(true)">나머지 ${hid}종목 보기 ▾</button> <small>추적 종목만 표시 중(검색하면 전체에서 찾습니다)</small></p>` : ""}${!q && bondAll ? `<p class=noprint style="margin:6px 0"><button onclick="bondAll=false;render(true)">추적 종목만 보기 ▴</button></p>` : ""}
     <div class=note>${RT.r} IPCA+·Renda+·Educa+ 의 수익률은 <b>IPCA(물가)에 더해지는 실질금리</b>이고, ${RT.n} Prefixado·Selic 은 명목(물가 보정 없음)입니다. 환율은 어느 것에도 반영되지 않았습니다.</div></div></section>`;
 };
 
@@ -1292,7 +1347,9 @@ const HELP = [
     <ul><li><b>① 정치·재정 시나리오별</b>(04-1) — 시나리오별 12개월 원화 수익, EV, 실질, 최악·최선 폭, 투자금 기준 EV 손익. 진입 후 환율을 고정하므로 PF32의 환위험은 드러나지 않습니다.</li>
     <li><b>② 환율 가정별</b>(04-2) — 만기 보유 연율 ${RT.kr}. 5:5가 "헤알 약세 보험료(EV 일부 포기)로 하방을 방어하는 구조"임을 보여 줍니다.</li></ul>`},
   {k: "t06", t: "06 국채 전체 — Tesouro 상품 목록", h: `
-    <p><b>의도</b> — 같은 기준일의 Tesouro Direto 전체 상품 가격·수익률을 확인하고, 추적 종목(PF32 등)을 맨 위에서 비교합니다. 검색창으로 종목을 찾습니다.</p>
+    <p><b>의도</b> — 같은 기준일의 Tesouro Direto 상품 가격·수익률을 확인하고, 추적 종목(PF32 등)을 맨 위에서 비교합니다. 목록은 추적 종목만 보이고 <b>[나머지 N종목 보기]</b>로 전체를 펼칩니다. 검색창에 입력하면 전체에서 찾습니다.</p>
+    <ul><li><b>국고채 비교</b> — 한국 국고채(원화채, 환율 위험 없음)를 브라질·달러채와 같은 기준으로 놓습니다. 증권사 화면의 종목명·표면금리·만기·매수수익률(·민평수익률·기준일)을 직접 입력하면(자동 수집 아님) 연복리 환산, 한국 물가를 뺀 ${RT.kr}, 이자에만 과세한 세후 수익률, 수정 듀레이션, 금리 ±1%p 가격 변동이 계산됩니다. 아래 표는 국고채와 ① 헤알채 ② 달러채 ③ 5:5의 ${RT.kr}을 환율 가정별로 나란히 보여 주며, 손절 기준 미만은 빨간색입니다.</li>
+    <li><b>읽는 법</b> — 수익률은 <b>만기까지 보유하고 이자를 같은 수익률로 재투자</b>할 때의 값이라 확정이 아닙니다. 만기가 다르므로(국고채 20년 이상 대 PF32 약 5년) 같은 기간 비교가 아니며, 듀레이션이 길수록 중도 매도 시 가격 변동이 큽니다. 민평수익률 대비 매수 가격 차이는 증권사 마진을 가늠하는 용도입니다. 세금은 이자소득세만 반영한 단순 계산이며 계좌별 과세(ISA 등)는 반영하지 않습니다.</li></ul>
     <p class=note>가격은 Investir CSV(매수 쪽 가격) 기준입니다. 직접 올린 CSV(상단 📂)가 더 최신이면 그것을 씁니다.</p>`},
   {k: "tset", t: "설정 — 분할매수 단계·내 보유", h: `
     <p><b>의도</b> — 개인 포지션(체결가·날짜·체결 여부)만 입력합니다. 나머지(물가·환율·시세)는 자동이고, 가정과 기준값은 각 탭에서 바로 수정합니다(설정은 최소화).</p>
@@ -1415,7 +1472,7 @@ function glPick(i) {
   e.scrollIntoView({behavior: "smooth", block: "start"}); e.classList.remove("glflash"); void e.offsetWidth; e.classList.add("glflash");
 }
 
-const CFG_KEYS = ["stages", "target_real", "extra_fx_rows", "fx_range", "buy_real", "stop_real", "mk", "cal_plan", "cal_zone", "cal_watch", "pol", "usd_inc", "rc3", "pos", "sim"];
+const CFG_KEYS = ["ktb", "stages", "target_real", "extra_fx_rows", "fx_range", "buy_real", "stop_real", "mk", "cal_plan", "cal_zone", "cal_watch", "pol", "usd_inc", "rc3", "pos", "sim"];
 async function exportCfg() {
   const o = {}; CFG_KEYS.forEach(k => { if (C[k] !== undefined) o[k] = C[k]; });
   const t = JSON.stringify(o);
