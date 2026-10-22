@@ -1385,7 +1385,7 @@ function glGo(k) { const e = document.getElementById("gl-" + k); if (e) e.scroll
 V.gloss = m => {
   if (glHtml == null && !glBusy) { glBusy = true; fetch("glossary.html", {cache: "no-cache"}).then(r => r.ok ? r.text() : Promise.reject()).then(t => { glHtml = t; }).catch(() => { glHtml = "<p>용어정리를 불러오지 못했습니다. 새로고침하세요.</p>"; }).finally(() => { glBusy = false; if (tab === "gloss") render(); }); }
   return `<section><h2>용어정리 — 예제로 익히는 채권 계산</h2><div class=body>
-    <div class=note>예제 숫자는 계산 원리를 보여주는 가정값이며 현재 시장값이 아닙니다. 투자 권유가 아닌 학습 자료입니다.</div>
+    <div class=note>예제 숫자는 계산 원리를 보여주는 가정값이며 현재 시장값이 아닙니다. 투자 권유가 아닌 학습 자료입니다. 이 앱 전용 용어(손절·정합 기준 등)는 <a class=gll href="javascript:helpGo('terms')">도움말 ▸ 용어·개념 사전</a>에서 확인하세요.</div>
     <input id=glq placeholder="용어 검색 (예: 듀레이션, YTM, 경과이자, 비과세)" value="${glQ.replace(/"/g, "&quot;")}" oninput="glQ=this.value;glFilter()" onkeydown="if(event.key==='Enter'){const b=$('#glsug');if(b&&b._first!=null)glPick(b._first)}" autocomplete=off>
     <div id=glsug class=glsug hidden></div>
     <div class=gl>${glHtml == null ? "불러오는 중…" : glHtml}</div></div></section>` + (setTimeout(glFilter, 0), "");
