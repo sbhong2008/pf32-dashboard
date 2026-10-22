@@ -107,6 +107,9 @@ svg text{fill:var(--ink);font-size:10px}
   tr{break-inside:avoid}}
 /* 용어정리 탭(glossary.html 조각) */
 .gl [hidden]{display:none!important}
+.glsug{border:1px solid var(--ink);max-height:46vh;overflow-y:auto;margin:2px 0 10px;background:var(--paper)}.glsug .glc{font-size:12px;padding:5px 10px;background:var(--soft)}
+.glsug button{display:block;width:100%;text-align:left;border:0;border-top:1px solid var(--line);background:none;color:var(--ink);padding:8px 10px;font:inherit;font-size:14px;cursor:pointer}.glsug button:hover{background:var(--soft)}.glsug button small{color:#777;margin-left:6px}.glsug button span{display:block;font-size:12.5px;color:#777}.glsug mark{background:#ffe38a;color:#000}
+@keyframes glf{from{background:#ffe38a}to{background:transparent}}.gl .glflash{animation:glf 1.8s}
 .gl{--muted:#5a6573;--rule:var(--line);--accent:#1f4e79;--accent-soft:#e7eef6;--calc:var(--soft);--warn:#8a4b08;--warn-soft:#fbf1e3;line-height:1.7;word-break:keep-all}
 @media (prefers-color-scheme:dark){.gl{--muted:#9aa5b3;--accent:#8db8e3;--accent-soft:#1c2a3a;--warn:#e3a35a;--warn-soft:#2a2116}}
 .gl .gl-toc ol{list-style:none;margin:0 0 14px;padding:0;display:flex;flex-wrap:wrap;gap:6px 14px}.gl .gl-toc a{color:var(--ink);text-decoration:none;border-bottom:2px solid var(--line)}.gl .gl-toc .sub{display:none}
@@ -1373,17 +1376,33 @@ V.gloss = m => {
   if (glHtml == null && !glBusy) { glBusy = true; fetch("glossary.html", {cache: "no-cache"}).then(r => r.ok ? r.text() : Promise.reject()).then(t => { glHtml = t; }).catch(() => { glHtml = "<p>용어정리를 불러오지 못했습니다. 새로고침하세요.</p>"; }).finally(() => { glBusy = false; if (tab === "gloss") render(); }); }
   return `<section><h2>용어정리 — 예제로 익히는 채권 계산</h2><div class=body>
     <div class=note>예제 숫자는 계산 원리를 보여주는 가정값이며 현재 시장값이 아닙니다. 투자 권유가 아닌 학습 자료입니다.</div>
-    <input id=glq placeholder="용어 검색 (예: 듀레이션, YTM, 경과이자, 비과세)" value="${glQ.replace(/"/g, "&quot;")}" oninput="glQ=this.value;glFilter()">
-    <div id=glcnt class=note style="margin:6px 0"></div>
+    <input id=glq placeholder="용어 검색 (예: 듀레이션, YTM, 경과이자, 비과세)" value="${glQ.replace(/"/g, "&quot;")}" oninput="glQ=this.value;glFilter()" onkeydown="if(event.key==='Enter'){const b=$('#glsug');if(b&&b._first!=null)glPick(b._first)}" autocomplete=off>
+    <div id=glsug class=glsug hidden></div>
     <div class=gl>${glHtml == null ? "불러오는 중…" : glHtml}</div></div></section>` + (setTimeout(glFilter, 0), "");
 };
+const glEsc = t => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 function glFilter() {
-  const q = glQ.trim().toLowerCase(), cnt = $("#glcnt"); if (!cnt) return;
-  let n = 0;
-  document.querySelectorAll(".gl article.term").forEach(a => { const ok = !q || a.textContent.toLowerCase().includes(q); a.hidden = !ok; if (ok) n++; });
-  document.querySelectorAll(".gl section.part").forEach(p => { p.hidden = !!q && !p.querySelector("article.term:not([hidden])"); });
-  const t = document.querySelector(".gl .gl-toc"); if (t) t.hidden = !!q;
-  cnt.hidden = !q; cnt.textContent = n ? `"${glQ.trim()}" — ${n}개 용어` : `"${glQ.trim()}" 검색 결과가 없습니다.`;
+  const q = glQ.trim().toLowerCase(), box = $("#glsug"); if (!box) return;
+  const arts = [...document.querySelectorAll(".gl article.term")];
+  arts.forEach((a, i) => { a.id = "gl-t" + i; });
+  if (!q) { box.hidden = true; box.innerHTML = ""; return; }
+  const hits = [];
+  arts.forEach((a, i) => {
+    const h = a.querySelector("h3"), title = h.textContent.replace(/\s+/g, " ").trim(), body = a.textContent.replace(/\s+/g, " "), p = body.toLowerCase().indexOf(q);
+    if (p < 0) return;
+    const t = title.toLowerCase().indexOf(q), part = a.closest("section.part").querySelector("h2").textContent;
+    hits.push({i, title, part, rank: t < 0 ? 1 : t === 0 ? -1 : 0, snip: t >= 0 ? "" : (p > 24 ? "…" : "") + body.slice(Math.max(0, p - 24), p + q.length + 36)});
+  });
+  hits.sort((x, y) => x.rank - y.rank || x.i - y.i);
+  const mk = t => glEsc(t).replace(new RegExp(glEsc(glQ.trim()).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), m => `<mark>${m}</mark>`);
+  box.hidden = false;
+  box.innerHTML = hits.length ? `<div class=glc>${hits.length}개 — 눌러서 이동</div>` + hits.map(h => `<button type=button onclick="glPick(${h.i})"><b>${mk(h.title)}</b> <small>${glEsc(h.part)}</small>${h.snip ? `<span>${mk(h.snip)}</span>` : ""}</button>`).join("") : `<div class=glc>"${glEsc(glQ.trim())}" 검색 결과가 없습니다.</div>`;
+  box._first = hits.length ? hits[0].i : null;
+}
+function glPick(i) {
+  const e = document.getElementById("gl-t" + i), box = $("#glsug"); if (box) box.hidden = true;
+  if (!e) return;
+  e.scrollIntoView({behavior: "smooth", block: "start"}); e.classList.remove("glflash"); void e.offsetWidth; e.classList.add("glflash");
 }
 
 const CFG_KEYS = ["stages", "target_real", "extra_fx_rows", "fx_range", "buy_real", "stop_real", "mk", "cal_plan", "cal_zone", "cal_watch", "pol", "usd_inc", "rc3", "pos", "sim"];
