@@ -424,6 +424,20 @@ function usdSection(r, m) {
     <tr><td>EV 실질(원) ${RT.kr}</td><td colspan=3></td><td class=r>${pct(real(ev(o => o.k), kr), 1)}</td><td class=r>${pct(real(ev(o => o.x.krwP[0]), kr), 1)}</td><td colspan=2></td><td class=r>${pct(real(ev(o => o.mix), kr), 1)}</td></tr></tbody></table></div>
     <div class=note>계산: 진입 YTM($) = 현재 ${f2(b.ytm, 2)}% + 가산금리 변동(미 국채금리 변동 없음 가정) · 가격 = ${f2(b.px, 2)} × (1 − 수정 듀레이션 ${f2(durOf(b), 2)} × 변동) · 12개월 달러 수익 ≈ 진입 YTM(진입 후 추가 변동 없음) · 원화 = (1+달러 수익)×(1+USD/KRW 변동 ${f2(g, 1)}%(변동 없음 가정, 환율 변동은 04-2)) − 1 · '동률 USD/KRW 변동'은 BRAZ 원화 수익이 PF32와 같아지는 달러 환율 변동(이보다 달러가 약해지면 PF32 우위). 가산금리 변동은 2018·2022·2024 반응을 참고한 <b>가정</b>이며 위 표에서 수정 가능. 가격·수익률은 직접 입력한 시세라 매수 전 증권사 호가로 확인하세요. 세금·수수료·환전비용 미반영.</div>${incHtml}`;
 }
+// 브라질 재정 신호 점검표 — 항목은 공개 calendar.json(fiscal_checklist), 체크 상태는 이 기기 localStorage(pf32chk)에만 저장
+function chkLoad() { try { return JSON.parse(localStorage.getItem("pf32chk") || "{}"); } catch (e) { return {}; } }
+function chkSet(k, v) { const o = chkLoad(); if (v) o[k] = Date.now(); else delete o[k]; try { localStorage.setItem("pf32chk", JSON.stringify(o)); } catch (e) {} render(true); }
+function chkReset() { try { localStorage.removeItem("pf32chk"); } catch (e) {} render(true); }
+function chkBlock(title, note, groups, pre, open) {
+  const st = chkLoad(), all = groups.flatMap((g, gi) => g.items.map((_, ii) => pre + gi + "." + ii)), n = all.filter(k => st[k]).length;
+  return `<details class=fold style="margin-top:10px" ${open ? "open" : ""}><summary>${title} — ${n}/${all.length} 확인</summary><div>
+    ${groups.map((g, gi) => `<div style="margin:6px 0 2px"><b>${g.g}</b></div>${g.items.map((t, ii) => { const k = pre + gi + "." + ii; return `<label style="display:block;margin:2px 0 2px 6px"><input type=checkbox ${st[k] ? "checked" : ""} onchange="chkSet('${k}',this.checked)"> ${t}</label>`; }).join("")}`).join("")}
+    <div class=note>${note || ""} 체크 상태는 이 기기에만 저장됩니다. <button class=noprint onclick="chkReset()">모두 해제</button></div></div></details>`;
+}
+function fiscalChk() {
+  const cal = D.cal; if (!cal) return "";
+  return (cal.fiscal_checklist ? chkBlock(cal.fiscal_title || "재정 신호 점검표", cal.fiscal_note, cal.fiscal_checklist, "") : "") + (cal.buy_checklist ? chkBlock(cal.buy_title || "매수 방법 점검표", cal.buy_note, cal.buy_checklist, "b") : "");
+}
 function polSection(m) {
   const r = polCalc(m), P = r.P, inp = (k, v, w = 68) => `<input type=number step=any data-k="${k}" value="${v}" style="width:${w}px;text-align:right" onchange="polEdit(this)">`;
   const names = ["PF32(고정)", "Selic 연동", "IPCA+ 2032"];
@@ -448,6 +462,7 @@ function polSection(m) {
     <div class=tbl style="margin-top:8px"><table class=mono><thead><tr><th>시나리오 (확인 후)</th><th class=r>원화 최선 종목</th><th class=r>2위와 차이</th><th>분할 매수 방식 (제안)</th></tr></thead><tbody>
     ${r.rows.map(x => { const o = x.krwP.map((v, j) => [v, j]).sort((p, q) => q[0] - p[0]); const plan = x.side === "우파" ? (x.dy <= -30 ? "급등분 추격 금지 · 1단계 소액 후 눌림·재정 신호마다 추가" : "이미 반영 · 1단계 후 인선·예산 신호 확인하며 추가") : (x.dy >= 200 ? "초기엔 Selic 위주 · 1~2주 안정 확인 후 PF32 소액 · Copom·재정대책 신호 후 확대" : "1~2주 과매도 안정 후 분할 · Selic 병행"); return `<tr><td style="white-space:normal">${x.name.split(" ")[0]} <small>${f2(x.w * 100, 0)}%</small></td><td class=r><b>${o[0][0] - o[1][0] < 0.05 ? o.filter(t => o[0][0] - t[0] < 0.05).map(t => names[t[1]].split("(")[0]).join("=") + " 동률" : names[o[0][1]]}</b></td><td class=r>${o[0][0] - o[1][0] < 0.05 ? "—" : f2(o[0][0] - o[1][0], 1) + "%p"}</td><td style="white-space:normal;min-width:240px">${plan}</td></tr>`; }).join("")}
     <tr style="border-top:2px solid var(--ink)"><td>시나리오별 최선 선택 시 EV</td><td class=r colspan=3><b>${pct(r.evBest, 1)}</b></td></tr></tbody></table></div>
+    ${fiscalChk()}
     ${(() => {
       const br = inflBR().v, kr = INF().kr, pu = m.price, bps = [-100, -50, 0, 50, 100, 200], fxs = [-10, 0, 10], x = r.rows[Math.min(polSel, r.rows.length - 1)];
       const puTxt = v => pu ? "R$ " + f2(v, 2) : "—";
@@ -1340,7 +1355,9 @@ const HELP = [
     <p><b>의도</b> — "결과가 이렇게 나오면 어떤 선택이 유리한가"를 숫자로 비교합니다(결선 같은 큰 이벤트 대비).</p>
     <ul><li><b>04-1 정치·재정 시나리오</b> — 우파 승리/룰라 재선 등 4개 시나리오의 확률·금리·환율·가산금리 <b>가정</b>(접이식 "가정 수정"에서 직접 입력). 결과는 PF32(고정) vs Selic vs IPCA+의 12개월 손익, 시나리오별 최선 종목, 분할 방식 제안, 가격·만기수익률 예측, 금리·환율 민감도. 확인 후 매수 가정(결과 확인 뒤 진입, 충격은 매수가에 이미 반영).</li>
     <li><b>달러표시 브라질 국채 비교와 이자 계산</b> — 수동 입력 시세(5종)로 PF32와 비교. 시세가 3일 넘으면 경고가 뜹니다. 이자(배당)는 달러채만 발생합니다(PF32는 제로쿠폰).</li>
-    <li><b>04-2 헤알채 vs 달러채</b> — 환율 가정별(기본값은 최근 5년 실제 환율에서 계산) ${RT.kr} 만기수익률. 환율 가정은 입력칸으로 수정, "기본값으로"로 되돌립니다. 아래에 가정별 과거 발생 구간과 3국 정권·주요 이벤트 표(인과관계를 단정할 수 없음).</li></ul>
+    <li><b>04-2 헤알채 vs 달러채</b> — 환율 가정별(기본값은 최근 5년 실제 환율에서 계산) ${RT.kr} 만기수익률. 환율 가정은 입력칸으로 수정, "기본값으로"로 되돌립니다. 아래에 가정별 과거 발생 구간과 3국 정권·주요 이벤트 표(인과관계를 단정할 수 없음).</li>
+    <li><b>매수 방법 점검표</b> — 04-1 하단 접이식(재정 점검표 아래). 국내 증권사 장외 매수 절차: 경로·상품(LTN 2032 또는 NTN-F 대체), 증권사 3곳 비교 질문, 비과세 서면 확인, 판단 기준(마진 0.3%p), 계좌·기록. 출처는 전략 문서 7장이며 현재 조건은 증권사에 문의해야 합니다.</li>
+    <li><b>재정 신호 점검표</b> — 04-1 하단 접이식. 인선(재무장관·중앙은행)·정책(재정 목표·준칙·예산)·시장 반응(금리·환율·Copom)을 직접 체크합니다. 항목은 공개 calendar.json, 체크 상태는 이 기기에만 저장되고, 결선 전후 GitHub 알림 이슈에도 같은 항목이 붙습니다.</li></ul>
     <p class=note>시나리오 확률과 환율·금리 반응은 <b>예측이 아니라 입력 가정</b>입니다. 모든 가정의 단일 출처는 이 탭입니다.</p>`},
   {k: "t05", t: "05 헤알·달러·5:5 비교 — 세 구성의 요약", h: `
     <p><b>의도</b> — 04의 가정과 계산을 그대로 모아 <b>헤알채 100% / 5:5 / 달러채 100%</b>를 나란히 비교합니다(새 계산 없음, 04와 숫자가 일치해야 함).</p>

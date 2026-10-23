@@ -20,6 +20,21 @@ TIPS = {
     "target": "수익 소진 TARGET 도달: 매도 검토 — 매도가는 약 0.6% 낮음 · 세금·환율·보유 시 남은 실질 수익률과 비교 후 판단 · 02 탭 TARGET 카드에서 기준 확인",
     "fx": "손절 환율 근접: 02·03 탭의 손절 환율과 현재 환율 거리 확인 · 체결 입력이 있으면 평균 매수 환율 기준",
 }
+
+def checklist_md(kind):
+    """calendar.json 의 점검표(kind: fiscal|buy)를 마크다운 체크박스로(공개 문구만, 개인 값 없음)"""
+    try: cal = json.load(open(os.path.join(ROOT, "calendar.json"), encoding="utf-8"))
+    except (OSError, ValueError): return ""
+    gs = cal.get(kind + "_checklist")
+    if not gs: return ""
+    out = [f"### {cal.get(kind + '_title', '점검표')}"]
+    for g in gs: out += [f"**{g['g']}**"] + [f"- [ ] {t}" for t in g["items"]]
+    if cal.get(kind + "_note"): out.append(f"\n{cal[kind + '_note']}")
+    return "\n".join(out)
+
+def fiscal_md(): return checklist_md("fiscal")
+def all_md(): return "\n\n".join(x for x in (checklist_md("fiscal"), checklist_md("buy")) if x)
+
 WEEKLY = "주 1회 점검: 달러채 시세 갱신(수동) · 매수 기준·손절 기준·TARGET 재검토 · 큰 이벤트(결선 10/25 등) 전후 04-1 시나리오 확률 확인"
 FULL_CHECKLIST = """### 아침 3분 점검표
 1. 알림 확인 (GitHub 앱, Mac 알림센터)
@@ -79,7 +94,7 @@ def notify_local(ev, title="PF32 알림"):
     head, tips = local_message(ev)
     try:
         os.makedirs(os.path.join(ROOT, "data"), exist_ok=True)
-        open(os.path.join(ROOT, "data", "last_alert.md"), "w", encoding="utf-8").write(f"# {title}\n\n{head}\n\n" + "\n".join(f"- {TIPS[k]}" for k in dict.fromkeys(k for k, _ in ev) if k in TIPS) + f"\n\n{FULL_CHECKLIST}\n")
+        open(os.path.join(ROOT, "data", "last_alert.md"), "w", encoding="utf-8").write(f"# {title}\n\n{head}\n\n" + "\n".join(f"- {TIPS[k]}" for k in dict.fromkeys(k for k, _ in ev) if k in TIPS) + f"\n\n{FULL_CHECKLIST}\n\n{all_md()}\n")
     except OSError: pass
     msg = (head + " ▶ " + tips)[:240].replace('"', "'").replace("\\", "")
     subprocess.run(["osascript", "-e", f'display notification "{msg}" with title "{title}" sound name "Glass"'], check=False)
@@ -91,7 +106,7 @@ def assign_owner(url, repo):
 
 def issue_body(owner, sample=False):
     tag = "[샘플 — 실제 신호가 아닙니다] " if sample else ""
-    return f"@{owner} {tag}PF32 신호가 바뀌었습니다. 앱 01 탭에서 확인하세요. (개인 설정이 공개되지 않도록 어떤 신호인지·가격 등 상세는 이 이슈에 적지 않습니다.)\n\n{FULL_CHECKLIST}"
+    return f"@{owner} {tag}PF32 신호가 바뀌었습니다. 앱 01 탭에서 확인하세요. (개인 설정이 공개되지 않도록 어떤 신호인지·가격 등 상세는 이 이슈에 적지 않습니다.)\n\n{FULL_CHECKLIST}\n\n{all_md()}"
 
 def notify_actions(ev):
     repo = os.environ.get("GITHUB_REPOSITORY", "sbhong2008/pf32-dashboard"); owner = repo.split("/")[0]
@@ -159,9 +174,10 @@ def calendar_issue(e, a, sn, owner, cur=None):
     when = e.get("when", ""); chk = "\n".join(f"- {c}" for c in e.get("check", []))
     unc = "" if e.get("confirmed", True) else "\n\n※ 일정이 확정되지 않았거나 단일 출처입니다. 공식 일정으로 재확인하세요."
     note = f"\n\n참고: {e['note']}" if e.get("note") else ""
+    fis = "".join(f"\n\n{checklist_md(k)}" for k in ("fiscal", "buy") if e.get(k))
     st, tag = weekly_status(cur) if e.get("weekly") and cur else ("", "")
     return (f"📅 PF32 일정 — {e['title']} ({a['label']})" + (f" · {tag}" if tag else ""),
-            f"@{owner} **{e['title']}** · {when}\n\n" + (f"**점검 결과**\n{st}\n\n" if st else "") + f"**확인할 것**\n{chk}\n\n**시장 스냅샷**(갱신 {sn.get('asof', '')[:16].replace('T', ' ')} UTC)\n{snap_line(sn)}{unc}{note}\n\n개인 계획·판정은 공개 이슈에 적지 않습니다. 앱 01 탭의 '다가오는 일정'에서 확인하세요.")
+            f"@{owner} **{e['title']}** · {when}\n\n" + (f"**점검 결과**\n{st}\n\n" if st else "") + f"**확인할 것**\n{chk}\n\n**시장 스냅샷**(갱신 {sn.get('asof', '')[:16].replace('T', ' ')} UTC)\n{snap_line(sn)}{unc}{note}{fis}\n\n개인 계획·판정은 공개 이슈에 적지 않습니다. 앱 01 탭의 '다가오는 일정'에서 확인하세요.")
 
 def calendar_main():
     path = os.path.join(ROOT, "calendar.json")
