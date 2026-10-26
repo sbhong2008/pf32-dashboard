@@ -191,6 +191,43 @@ def update_yield_reach(path=None):
     return out
 
 
+def update_yield_dist(path=None):
+    """잔존 4~6.5년 Prefixado(≈PF32) 12개월(252영업일) 금리 변동의 과거 분포(평균 제거, bp 분위 0~100%)와 최근 변동성 비율.
+    앱 민감도 표의 '진입 후 금리 변동 발생 확률'을 매일 다시 계산하는 데 쓴다: 분포 모양=과거 표본, 중심=시나리오 가정, 폭=과거 대비 최근 60영업일 일간 변동성 비율(0.7~1.5로 제한)."""
+    path = path or CACHE / "PrecoTaxaTesouroDireto.csv"
+    if not Path(path).exists(): raise FileNotFoundError("국채 CSV 캐시 없음")
+    B = {}
+    with open(path, encoding="utf-8", newline="") as f:
+        for r in csv.reader(f, delimiter=";"):
+            if not r or r[0] != "Tesouro Prefixado": continue
+            try: d = datetime.strptime(r[2], "%d/%m/%Y").date(); mv = datetime.strptime(r[1], "%d/%m/%Y").date(); y = float(r[3].replace(",", "."))
+            except (ValueError, IndexError): continue
+            if d >= date(2016, 10, 21): B.setdefault(mv, []).append((d, y))
+    for v in B.values(): v.sort()
+    idx = {mv: {x[0]: i for i, x in enumerate(v)} for mv, v in B.items()}
+    dates = sorted({x[0] for v in B.values() for x in v})
+    H = 252; ch = []; daily = []
+    for n, dd in enumerate(dates):
+        best = None
+        for mv in B:
+            if dd in idx[mv]:
+                t = (mv - dd).days / 365.25
+                if 4.0 <= t <= 6.5 and (best is None or abs(t - 5.2) < abs(best[0] - 5.2)): best = (t, mv)
+        if not best: continue
+        v = B[best[1]]; i = idx[best[1]][dd]
+        if i > 0 and (dd - v[i - 1][0]).days <= 5: daily.append((dd, (v[i][1] - v[i - 1][1]) * 100))
+        if n % 3 == 0 and i + H < len(v): ch.append((v[i + H][1] - v[i][1]) * 100)
+    if len(ch) < 200 or len(daily) < 200: raise ValueError("표본 부족")
+    mean = sum(ch) / len(ch); dm = sorted(c - mean for c in ch)
+    q = [round(dm[min(len(dm) - 1, int(k / 100 * (len(dm) - 1) + 0.5))]) for k in range(101)]
+    sd = lambda a: (sum(x * x for x in a) / len(a)) ** 0.5
+    d_all = sd([x for _, x in daily]); d_rec = sd([x for _, x in daily[-60:]])
+    vr = max(0.7, min(1.5, d_rec / d_all)) if d_all else 1.0
+    out = {"q": q, "n": len(ch), "mean": round(mean), "sd": round(sd(dm)), "vol_ratio": round(vr, 2), "d_all": round(d_all, 1), "d_rec": round(d_rec, 1), "asof": str(daily[-1][0])}
+    log("금리 12개월 변동 분포:", {k: out[k] for k in ("n", "mean", "sd", "vol_ratio", "asof")})
+    return out
+
+
 def update_ust():
     """미 재무부 일별 명목 국채금리 3·5·7·10년(키 불필요) 최근 약 150영업일 — 달러표시 브라질 채권의 입력 시세 이후 금리 변동 추정용."""
     y = date.today().year; rows = {}
@@ -398,6 +435,9 @@ def main():
     try: reach = update_yield_reach(); status["reach"] = "ok"
     except Exception as e:
         log("금리 도달 빈도 계산 실패(이전 값 유지):", e); status["reach"] = f"error: {e}"; reach = prev.get("yield_reach")
+    try: ydist = update_yield_dist(); status["ydist"] = "ok"
+    except Exception as e:
+        log("금리 변동 분포 계산 실패(이전 값 유지):", e); status["ydist"] = f"error: {e}"; ydist = prev.get("yield_dist")
     prev_infl = prev.get("infl") or {}
     try: infl = dict(infl or {}, **update_infl_kus())
     except Exception as e:
@@ -438,7 +478,7 @@ def main():
     out = {"generated": datetime.now().astimezone().isoformat(timespec="seconds"), "status": status,
            "live": live, "live_info": live_info, "bonds": sorted(bonds, key=lambda b: (b["tipo"], b["venc"][-4:])),
            "series": series,
-           "fx": {"latest": fx[-1] if fx else None, "series": fx}, "fx_usd": fx_usd, "fx_stats": fxs, "infl": infl, "ust": ust, "mkt": mkt, "yield_reach": reach}
+           "fx": {"latest": fx[-1] if fx else None, "series": fx}, "fx_usd": fx_usd, "fx_stats": fxs, "infl": infl, "ust": ust, "mkt": mkt, "yield_reach": reach, "yield_dist": ydist}
     (DATA / "data.json").write_text(json.dumps(out, ensure_ascii=False), encoding="utf-8")
     log("data.json 생성 완료", status)
     if not os.environ.get("GITHUB_ACTIONS") and not os.environ.get("PF32_NO_NOTIFY"):   # 로컬 실행: 새로 켜진 신호를 macOS 알림으로 (Actions 는 워크플로가 따로 처리)
