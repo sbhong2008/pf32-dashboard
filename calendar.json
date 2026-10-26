@@ -22,7 +22,7 @@
      "check": ["표결 결과(통과·부결)와 국민연합(RN)의 대응", "프랑스·독일 10년물 금리 차 변화"], "alerts": [{"offset": 0, "label": "당일"}, {"offset": 1, "label": "결과 확인"}],
      "src": "파이낸셜뉴스 2026-10-19", "note": "상원·최종 표결 일정은 미확인"},
     {"id": "br-runoff", "fiscal": true, "date": "2026-10-25", "title": "브라질 대통령 결선", "when": "10/25(일) 현지 투표·개표 → 결과 10/26 아침(KST)", "confirmed": true,
-     "check": ["당선자 확인", "개표 직후 헤알 환율·국채 금리 반응 기록"], "alerts": [{"offset": -3, "label": "D-3"}, {"offset": -1, "label": "D-1"}, {"offset": 0, "label": "당일"}]},
+     "check": ["당선자 확인(룰라 재선 확정, 플라비우 측 불복 의사 — 소송·TSE 판단 추적)", "개표 직후 헤알 환율·국채 금리 반응 기록"], "alerts": [{"offset": -3, "label": "D-3"}, {"offset": -1, "label": "D-1"}, {"offset": 0, "label": "당일"}]},
     {"id": "br-post-close", "fiscal": true, "buy": true, "date": "2026-10-27", "title": "결선 후 첫 종가 점검", "when": "10/27(화) 아침(KST) — 브라질 10/26 종가 기준", "confirmed": true,
      "check": ["PF32 금리·헤알/원 기록", "결선 후 체크리스트로 상황 판정"], "alerts": [{"offset": 0, "label": "당일"}]},
     {"id": "fomc", "date": "2026-10-28", "title": "FOMC 금리 결정", "when": "10/28 14:00(ET) = 10/29 03:00(KST)", "confirmed": true,

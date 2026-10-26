@@ -213,6 +213,7 @@ async function load() {
   C = await jget("config.json");
   const loc = await jget("config.local.json"); if (loc) C = {...C, ...loc};   // 개인 설정(로컬 서버 전용, git 제외)
   const ls = lsGet("pf32cfg"); if (ls) C = {...C, ...ls};                    // 이 기기 브라우저 설정
+  if (C.rc3 && C.rc3.length === 5) C.rc3.push(rcDef()[5]);   // 04-2 달러 약세형 행 추가(10/24) — 기기에 저장된 5행 가정에 보강
   delete C.stop_price; delete C.stop_fx; delete C.target_price;                                                     // 가격 STOP 폐지(원화 실질 손절 기준으로 대체) — 기기에 남은 옛 값 무시
   const lv = lsGet("pf32live");                                              // 직접 올린 Investir CSV
   if (lv && (!D.live_info || lv.info.mtime >= D.live_info.mtime)) { D.live = lv.rows; D.live_info = lv.info; }
@@ -295,14 +296,15 @@ const INF = () => {   // 한국·미국 물가는 항상 자동값(한국 ECOS �
 // ---------- 정치·재정 시나리오 (PF32 고정금리 vs Selic 연동 vs IPCA+) ----------
 // 기본값은 2018·2022 선거, 2024 재정 충격 때의 실제 움직임을 참고한 '가정'이며 예측이 아님. 모두 이 탭에서 직접 수정 가능
 const POL_DEF = {
+  ver: 2,   // 시나리오 정의를 바꾸면 올림 — 이전 버전으로 저장된 sc(옛 확률·충격)는 무시
   sel_spread: 0.0979, ipca_real: 6.83, ipca_venc: "15/08/2032",
   sc: [
-    {name: "S1 우파 승리 + 재정 신뢰 회복", side: "우파", prob: 31, dy: -60, sel: 12.3, ipca: 3.8, dr: -30, fx: 5, dy2: -10, dr2: -5, fx2: 1, sp: -25},
-    {name: "S2 우파 승리, 개혁 지연(이미 반영)", side: "우파", prob: 47, dy: 0, sel: 12.9, ipca: 4.3, dr: 0, fx: 0, dy2: 0, dr2: 0, fx2: 0, sp: 0},
-    {name: "S3 룰라 재선 + 재정 현상유지(2022형)", side: "룰라", prob: 15, dy: 150, sel: 13.4, ipca: 5.0, dr: 75, fx: -7, dy2: 0, dr2: 0, fx2: 0, sp: 60},
-    {name: "S4 룰라 재선 + 재정 악화(2024형)", side: "룰라", prob: 7, dy: 250, sel: 14.3, ipca: 6.5, dr: 125, fx: -12, dy2: 0, dr2: 0, fx2: 0, sp: 120}]
+    {name: "S1 연착륙: 시장 친화적 재정 신호(재무장관·준칙 유지)", side: "룰라", prob: 15, dy: 100, sel: 13.0, ipca: 4.3, dr: 50, fx: -4, dy2: -50, dr2: -25, fx2: 2, sp: 30},
+    {name: "S2 2022형: 충격 후 안정(재정 현상유지)", side: "룰라", prob: 40, dy: 150, sel: 13.4, ipca: 5.0, dr: 75, fx: -7, dy2: 0, dr2: 0, fx2: 0, sp: 60},
+    {name: "S3 2024형: 재정 우려 지속(지출 확대·준칙 약화)", side: "룰라", prob: 30, dy: 250, sel: 14.3, ipca: 6.5, dr: 125, fx: -12, dy2: 50, dr2: 25, fx2: -3, sp: 120},
+    {name: "S4 불복·제도 혼란 + 재정 악화(소송·정국 불안)", side: "룰라", prob: 15, dy: 350, sel: 15.0, ipca: 7.0, dr: 175, fx: -16, dy2: 50, dr2: 25, fx2: -4, sp: 180}]
 };
-const POL = () => { const c = C.pol || {}; return {...POL_DEF, ...c, sc: (c.sc && c.sc.length ? c.sc : POL_DEF.sc).map((s, i) => ({...POL_DEF.sc[i], ...s}))}; };
+const POL = () => { let c = C.pol || {}; if (c.sc && c.ver !== POL_DEF.ver) c = {...c, sc: null}; return {...POL_DEF, ...c, sc: (c.sc && c.sc.length ? c.sc : POL_DEF.sc).map((s, i) => ({...POL_DEF.sc[i], ...s}))}; };
 function yearsTo(venc, now = new Date()) { const [d, m, y] = venc.split("/").map(Number); return Math.max(0.1, (new Date(y, m - 1, d) - now) / (365.25 * 864e5)); }
 function polCalc(m) {
   const P = POL(), live = k => (D.live || []).find(b => b.key === k);
@@ -335,7 +337,7 @@ let showPolRef = false, polSel = 1, polOpen = false, krwOpen = false;
 function polEdit(el) {
   const path = el.dataset.k.split("."), v = el.type === "number" ? parseFloat(el.value) : el.value;
   if (el.type === "number" && isNaN(v)) return;
-  if (!C.pol) C.pol = {}; if (!C.pol.sc) C.pol.sc = POL().sc;
+  if (!C.pol) C.pol = {}; if (C.pol.ver !== POL_DEF.ver) { C.pol.sc = null; C.pol.ver = POL_DEF.ver; } if (!C.pol.sc) C.pol.sc = POL().sc;
   let o = C; path.slice(0, -1).forEach(p => o = o[p]); o[path.at(-1)] = v;   // path 는 "pol.sc.i.키" → C 에서 시작
   try { localStorage.setItem("pf32cfg", JSON.stringify(C)); } catch (e) {}
   if (LOCAL) fetch("/api/config", {method: "POST", body: JSON.stringify(C)}).catch(() => {});
@@ -447,7 +449,7 @@ function polSection(m) {
   return `<section id=s041><h2>04-1 정치·재정 시나리오 비교 — PF32 vs Selic vs IPCA+</h2><div class=body>
     <div class="subnav noprint"><button onclick="${sc("s041")}">04-1 정치·재정</button><button onclick="${sc("s041usd")}">달러채 비교</button><button onclick="${sc("s041inc")}">이자 계산</button><button onclick="${sc("s042")}">04-2 환율 가정</button></div>
     <div class="callout sum"><b>핵심</b> — ${RT.kn} 원화 기대수익(EV) ${names.map((n, j) => `${j === bi ? "<b>" : ""}${n} <span class=mono>${pct(r.evK[j], 1)}</span>${j === bi ? "</b> ✔" : ""}`).join(" · ")} · 시나리오별 최선 선택 시 <b class=mono>${pct(r.evBest, 1)}</b><br><small>룰라 승리 확률 ${f2(r.pLula, 0)}% / 우파 ${f2(100 - r.pLula, 0)}% · 결과 확인 후(10/25) 매수·12개월 보유 가정 · 가정은 아래 "가정 수정"에서 변경</small></div>
-    <div class=note>결선 <b>10/25 · 플라비우 볼소나루(우파) vs 룰라(좌파)</b> · 예측시장의 우파 승리 확률은 약 77~78%(10/16 보도) · 정부 재정: 총부채 GDP 대비 80%대 초반, 2026 기초수지 적자 전망 — <b>확률과 금리·환율 반응은 아래에서 직접 입력</b>하세요 (입력값은 이 기기에만 저장).</div>
+    <div class=note>결선 <b>10/25 결과: 룰라 재선(약 51.8% 대 48.2%, 득표 차 약 430만 표, TSE 개표 99.9%대)</b> — 사전 예측시장은 우파 약 77~78%였고 1차 투표·여론조사도 우파 우세였습니다. 플라비우 측은 결과 인정을 거부하고 무효화를 추진한다는 보도가 있어 <b>불복·소송이 새 위험</b>입니다(투표 2시간 연장이 쟁점). 개표 직후 일본 거래 ETF가 급락하고 달러 선물이 급등했다는 보도가 있으나 B3 종가는 미확인 — 10/27 아침 종가로 '직후' 값을 확인하세요. 시나리오 S1~S4는 모두 룰라 재선 이후의 <b>재정·정국 전개 가정</b>(연착륙 15 · 2022형 40 · 2024형 30 · 불복·혼란 15)이며 확률은 제 임의 추정입니다. 기기에 저장된 옛 확률이 있으면 가정 수정에서 같은 값으로 맞추세요. · 정부 재정: 총부채 GDP 대비 80%대 초반, 2026 기초수지 적자 전망 — <b>확률과 금리·환율 반응은 아래에서 직접 입력</b>하세요 (입력값은 이 기기에만 저장).</div>
     <div class=note><b>결과 확인 후 매수</b> 기준: 10/25 결과가 나온 뒤(약 1주 내) 매수해 12개월 보유 후 매도. 충격(금리·환율)은 <b>이미 매수가에 반영</b>되고, 손익은 <b>진입 금리의 이자 + 진입 후 추가 변동</b>으로 계산합니다.</div>
     <details class=fold ${polOpen ? "open" : ""} ontoggle="polOpen=this.open"><summary>가정 수정 — 확률·금리·환율·가산금리 (펼치기)</summary><div>
     <div class=tbl style="margin-top:8px"><table class=mono><thead><tr><th>가정</th><th class=r>확률%</th><th class=r>직후 금리 변동 bp<br><small>= 진입 금리</small></th><th class=r>진입 후 추가 금리 bp</th><th class=r>평균 Selic %</th><th class=r>실제 IPCA %</th><th class=r>직후 실질금리 bp</th><th class=r>진입 후 추가 실질 bp</th><th class=r>직후 BRL/KRW %</th><th class=r>진입 후 BRL/KRW %</th><th class=r>BRAZ 달러채 가산금리 변동 bp</th></tr></thead><tbody>
@@ -458,7 +460,7 @@ function polSection(m) {
     ${r.rows.map(x => `<tr><td style="white-space:normal">${x.name.split(" ")[0]} <small>${f2(x.w * 100, 0)}%</small></td><td class=r>${f2(x.yin, 2)}%</td>${cell(x.brlP, best(x.brlP))}${cell(x.krwP, best(x.krwP))}</tr>`).join("")}
     <tr style="border-top:2px solid var(--ink)"><td><b>기대값 EV</b></td><td></td>${cell(r.evB, best(r.evB))}${cell(r.evK, best(r.evK))}</tr>
     <tr><td>EV 실질(원) ${RT.kr}</td><td colspan=4></td>${r.evKR.map(v => `<td class=r>${pct(v, 1)}</td>`).join("")}</tr></tbody></table></div>
-    <div class=note>${r.be == null ? "확인 후 매수 기준으로는 룰라 승리 확률을 0~100%로 바꿔도 원화 기대수익에서 Selic 이 PF32 를 앞서지 않습니다 (진입 금리가 이미 올라 이자가 크기 때문 — 단 진입 후 추가 악화 가정 시 달라짐)." : (r.pLula > r.be ? `⚠ 룰라 승리 확률이 <b>${r.be}%</b>를 넘으면 (확인 후 매수 기준) 원화 기대수익은 Selic 이 PF32 를 앞섭니다 (현재 입력 ${f2(r.pLula, 0)}% → Selic 우위).` : `룰라 승리 확률이 <b>${r.be}%</b>를 넘으면 (확인 후 매수 기준) 원화 기대수익은 Selic 이 PF32 를 앞섭니다 (현재 입력 ${f2(r.pLula, 0)}% → PF32 우위).`)}</div>
+    <div class=note>${r.pLula >= 99.5 ? "결선 결과가 확정돼(룰라) 승패 확률 민감도는 해당이 없습니다. 위 시나리오 확률(충격의 크기)로 판단하세요." : r.be == null ? "확인 후 매수 기준으로는 룰라 승리 확률을 0~100%로 바꿔도 원화 기대수익에서 Selic 이 PF32 를 앞서지 않습니다 (진입 금리가 이미 올라 이자가 크기 때문 — 단 진입 후 추가 악화 가정 시 달라짐)." : (r.pLula > r.be ? `⚠ 룰라 승리 확률이 <b>${r.be}%</b>를 넘으면 (확인 후 매수 기준) 원화 기대수익은 Selic 이 PF32 를 앞섭니다 (현재 입력 ${f2(r.pLula, 0)}% → Selic 우위).` : `룰라 승리 확률이 <b>${r.be}%</b>를 넘으면 (확인 후 매수 기준) 원화 기대수익은 Selic 이 PF32 를 앞섭니다 (현재 입력 ${f2(r.pLula, 0)}% → PF32 우위).`)}</div>
     <div class=tbl style="margin-top:8px"><table class=mono><thead><tr><th>시나리오 (확인 후)</th><th class=r>원화 최선 종목</th><th class=r>2위와 차이</th><th>분할 매수 방식 (제안)</th></tr></thead><tbody>
     ${r.rows.map(x => { const o = x.krwP.map((v, j) => [v, j]).sort((p, q) => q[0] - p[0]); const plan = x.side === "우파" ? (x.dy <= -30 ? "급등분 추격 금지 · 1단계 소액 후 눌림·재정 신호마다 추가" : "이미 반영 · 1단계 후 인선·예산 신호 확인하며 추가") : (x.dy >= 200 ? "초기엔 Selic 위주 · 1~2주 안정 확인 후 PF32 소액 · Copom·재정대책 신호 후 확대" : "1~2주 과매도 안정 후 분할 · Selic 병행"); return `<tr><td style="white-space:normal">${x.name.split(" ")[0]} <small>${f2(x.w * 100, 0)}%</small></td><td class=r><b>${o[0][0] - o[1][0] < 0.05 ? o.filter(t => o[0][0] - t[0] < 0.05).map(t => names[t[1]].split("(")[0]).join("=") + " 동률" : names[o[0][1]]}</b></td><td class=r>${o[0][0] - o[1][0] < 0.05 ? "—" : f2(o[0][0] - o[1][0], 1) + "%p"}</td><td style="white-space:normal;min-width:240px">${plan}</td></tr>`; }).join("")}
     <tr style="border-top:2px solid var(--ink)"><td>시나리오별 최선 선택 시 EV</td><td class=r colspan=3><b>${pct(r.evBest, 1)}</b></td></tr></tbody></table></div>
@@ -1082,9 +1084,11 @@ const FX_EVENTS = [["2016-11", "미", "트럼프 당선, 달러 강세·신흥�
   ["2024-08", "글", "엔 캐리 청산, 위험자산 급락"], ["2024-09", "미", "Fed 첫 금리 인하"], ["2024-11", "미·브", "트럼프 재선 + 브라질 재정 패키지 실망, 헤알 급락"], ["2024-12", "한", "비상계엄·탄핵 정국, 원화 급락"],
   ["2025-01", "미", "트럼프 2기 취임"], ["2025-04", "미", "상호관세 발표, 글로벌 변동성 확대"], ["2025-06", "한", "이재명 정부 출범"], ["2025-07", "미", "대(對)브라질 50% 관세 발표"],
   ["2025-09", "미", "Fed 금리 인하 재개"], ["2026-02", "글", "미국·이스라엘-이란 전쟁 발발, 호르무즈 해협 봉쇄·유가 급등"], ["2026-10", "브", "대선 1차 투표 후 금리 하락(앱 기록)"]];
+const RC_WEAK = [-2.3, -3];   // [헤알 연 변동, 달러 연 변동] — 달러 연 -3% 가정, 헤알 = 0.77 × (-3%) (최근 5년 롤링 1년 변화율 회귀 기울기, 절편 제외한 보수적 스트레스)
 const rcDef = () => { const f = D.fx_stats || FXS_DEF, b = f.brl, u = f.usd;
   return [["강세형(헤알·달러 5년 강세구간 평균 = 원화 약세)", b.up, u.up], ["5년 연평균", b.cagr, u.cagr], ["헤알 약세(5년 약세구간 평균)·달러 연평균", b.down, u.cagr],
-    ["위험회피형(헤알 약세·달러 강세 = 원화 약세)", b.down, u.up], ["투자자 최악형(헤알·달러 동반 약세 = 원화 강세)", b.down, u.down]].map(c => [c[0], +c[1].toFixed(1), +c[2].toFixed(1)]); };
+    ["위험회피형(헤알 약세·달러 강세 = 원화 약세)", b.down, u.up], ["투자자 최악형(헤알·달러 동반 약세 = 원화 강세)", b.down, u.down],
+    ["달러 약세형(미 부채 우려: 달러 연 -3%, 헤알은 달러 약세의 0.77배 동반 = 최근 5년 회귀 기울기)", RC_WEAK[0], RC_WEAK[1]]].map(c => [c[0], +c[1].toFixed(1), +c[2].toFixed(1)]); };
 function rcEdit(el) {
   const i = +el.dataset.i, j = +el.dataset.j, v = parseFloat(el.value); if (isNaN(v)) return;
   if (!C.rc3) C.rc3 = rcDef();
@@ -1146,7 +1150,7 @@ function realCmpSection(m) {
       + `<tr style="font-weight:700"><td>EV</td><td></td><td></td>${cell([ev(0), ev(1), ev(2)], bi([ev(0), ev(1), ev(2)]))}</tr>`;
   }).join("");
   return `<section id=s042><h2>04-2 헤알채(PF32) vs 달러표시 채권 — ${RT.kr} 만기수익률 비교</h2><div class=body>
-    <div class=note>확인 뒤 매수한 진입 YTM로 만기까지 보유할 때의 <b>연율</b> ${RT.kr} <b>수익률</b>(한국 물가 ${f2(kr, 1)}% 차감). 달러채는 <b>${b.n}</b> 기준(04-1에서 종목 선택). 환율은 <b>진입 후 연 변동</b>이며 헤알=BRL/KRW, 달러=USD/KRW. 진입 전 환율 충격은 매수가에 이미 반영된 것으로 봅니다. 환율은 원화 기준 가격이라 <b>양수 = 해당 통화 강세(원화 약세), 음수 = 해당 통화 약세(원화 강세)</b>입니다. 달러채 투자자에게 불리한 쪽은 달러 연 변동이 음수일 때(원화 강세)입니다. 기본값은 최근 ${(D.fx_stats || FXS_DEF).yrs}년 원화 기준 실제 환율에서 계산했습니다(연평균 = 5년 전 대비 연 환산 변화율, 강세·약세 구간 평균 = 5년간 롤링 1년 변화율 중 오른 구간·내린 구간의 평균). 입력칸에서 수정할 수 있습니다. <button class=noprint onclick="delete C.rc3;try{localStorage.setItem('pf32cfg',JSON.stringify(C))}catch(e){};if(LOCAL)fetch('/api/config',{method:'POST',body:JSON.stringify(C)}).catch(()=>{});render(true)">기본값으로</button></div>
+    <div class=note>확인 뒤 매수한 진입 YTM로 만기까지 보유할 때의 <b>연율</b> ${RT.kr} <b>수익률</b>(한국 물가 ${f2(kr, 1)}% 차감). 달러채는 <b>${b.n}</b> 기준(04-1에서 종목 선택). 환율은 <b>진입 후 연 변동</b>이며 헤알=BRL/KRW, 달러=USD/KRW. 진입 전 환율 충격은 매수가에 이미 반영된 것으로 봅니다. 환율은 원화 기준 가격이라 <b>양수 = 해당 통화 강세(원화 약세), 음수 = 해당 통화 약세(원화 강세)</b>입니다. 달러채 투자자에게 불리한 쪽은 달러 연 변동이 음수일 때(원화 강세)입니다. 기본값은 최근 ${(D.fx_stats || FXS_DEF).yrs}년 원화 기준 실제 환율에서 계산했습니다(연평균 = 5년 전 대비 연 환산 변화율, 강세·약세 구간 평균 = 5년간 롤링 1년 변화율 중 오른 구간·내린 구간의 평균). 입력칸에서 수정할 수 있습니다. <b>달러 약세형</b>은 미국 부채 우려로 달러가 약해지는 경우를 보는 스트레스 가정으로, 달러 연 -3%에 헤알은 최근 5년 회귀 기울기(0.77배, 절편 제외)만큼 동반 약세로 두었습니다(과거에는 달러 약세와 헤알 방향이 구간마다 달라 값이 크게 변합니다 — 입력칸에서 조정). 손절 판정(4종)에는 포함되지 않습니다(더 약한 최악형이 이미 포함). <button class=noprint onclick="delete C.rc3;try{localStorage.setItem('pf32cfg',JSON.stringify(C))}catch(e){};if(LOCAL)fetch('/api/config',{method:'POST',body:JSON.stringify(C)}).catch(()=>{});render(true)">기본값으로</button></div>
     <div class=tbl><table class=mono><thead><tr><th>환율 가정</th><th>시나리오</th><th class=r>PF32<br>진입 YTM ${RT.n}</th><th class=r>달러채<br>진입 YTM ${RT.n}</th><th class=r>PF32 100%<br><small>실질(원)</small> ${RT.kr}</th><th class=r>5:5<br><small>실질(원)</small> ${RT.kr}</th><th class=r>달러채 100%<br><small>실질(원)</small> ${RT.kr}</th></tr></thead><tbody>${body}</tbody></table></div>
     <div class=note><span style="background:${GR}.6);padding:1px 6px;font-weight:700">전체 최선 ${pct(gMax, 1)}</span> <span style="background:${RD}.6);padding:1px 6px;font-weight:700">전체 최악 ${pct(gMin, 1)}</span> <span style="background:${GR}.22);padding:1px 6px">시나리오별 최선</span> <span style="background:${RD}.22);padding:1px 6px">시나리오별 최악</span> — 투자자 수익률 기준(환율 가정 5개 × 구성 3개 중 비교, EV 행 제외)</div>
     ${(() => { const T = (D.fx_stats && D.fx_stats.terms) || FXT_DEF, c = v => `<td class=r>${pct(v.chg, 1)}</td><td class=r>${pct(v.cagr, 1)}</td>`;
@@ -1154,7 +1158,7 @@ function realCmpSection(m) {
       <div class=tbl><table class=mono><thead><tr><th>국가</th><th>집권 (진영)</th><th>기간</th><th class=r>헤알 BRL/KRW<br><small>기간 변화</small></th><th class=r><small>연환산</small></th><th class=r>달러 USD/KRW<br><small>기간 변화</small></th><th class=r><small>연환산</small></th></tr></thead><tbody>
       ${T.map(t => `<tr><td>${t.c}</td><td style="white-space:normal">${t.who}</td><td>${t.from.slice(2, 7).replace("-", ".")}~${t.to.slice(2, 7).replace("-", ".")}</td>${c(t.brl)}${c(t.usd)}</tr>`).join("")}</tbody></table></div>
       <div class=note>양수 = 해당 통화 강세(원화 약세). 진영과 환율의 <b>인과관계가 아닙니다</b> — 표본이 정권 3~4개뿐이고 같은 기간에 코로나, 달러 사이클, 원자재 가격, 원화 자체의 움직임이 크게 작용했습니다. 브라질 집권 기간 미국 정권이 겹치므로 두 표를 따로 해석하세요. 룰라 3기는 2023-01 취임 이후, 트럼프 2기는 2025-01 취임 이후 현재까지입니다.</div>`; })()}
-    ${roll ? `<div class=note><b>발생빈도</b> = 과거 약 ${f2(roll.length / 52, 0)}년간(데이터 시작 2016-10 이후) 매주 기준 '직전 1년간 헤알·달러 변화율'을 위 5개 가정 중 <b>가장 가까운 것</b>에 배정한 비율입니다(합 100%, 가정값을 고치면 다시 계산). 4분면 기준으로는 헤알·달러 동반 약세(원화 강세) ${f2(quad[0], 0)}% · 헤알 약세·달러 강세 ${f2(quad[1], 0)}% · 헤알 강세·달러 약세 ${f2(quad[2], 0)}% · 동반 강세(원화 약세) ${f2(quad[3], 0)}%였습니다. 정권 표시는 그 가정에 해당한 1년 구간이 <b>끝난 날</b>의 집권 정권 비율입니다. 겹치는 1년 구간이라 독립 표본이 아니며 미래 확률이 아닙니다.</div>` : `<div class=note>발생빈도는 데이터 갱신(fx_stats.roll) 후 표시됩니다.</div>`}
+    ${roll ? `<div class=note><b>발생빈도</b> = 과거 약 ${f2(roll.length / 52, 0)}년간(데이터 시작 2016-10 이후) 매주 기준 '직전 1년간 헤알·달러 변화율'을 위 가정 중 <b>가장 가까운 것</b>에 배정한 비율입니다(합 100%, 가정값을 고치면 다시 계산). 4분면 기준으로는 헤알·달러 동반 약세(원화 강세) ${f2(quad[0], 0)}% · 헤알 약세·달러 강세 ${f2(quad[1], 0)}% · 헤알 강세·달러 약세 ${f2(quad[2], 0)}% · 동반 강세(원화 약세) ${f2(quad[3], 0)}%였습니다. 정권 표시는 그 가정에 해당한 1년 구간이 <b>끝난 날</b>의 집권 정권 비율입니다. 겹치는 1년 구간이라 독립 표본이 아니며 미래 확률이 아닙니다.</div>` : `<div class=note>발생빈도는 데이터 갱신(fx_stats.roll) 후 표시됩니다.</div>`}
     ${epHtml}
     <div class=note>굵은 글씨 = 해당 행에서 가장 높은 구성. 5:5 = (PF32 원화 연수익 + 달러채 원화 연수익) ÷ 2 (재조정·이자 재투자 단순화) · 달러 수익 = 진입 YTM($)(미 국채금리 변동 없음 가정) · 가산금리 변동 가정은 04-1 입력표 · 예금 대비 비교: 예금 4.3%(가정)의 실질은 약 ${f2(real(4.3, kr), 1)}% · 세금·수수료·환전비용 미반영, 투자 권유 아님.</div>
   </div></section>`;
@@ -1353,9 +1357,9 @@ const HELP = [
     <p class=note>환율은 ECB 기준이라 주말·휴일에는 날짜가 그대로이고 하루 정도 지연됩니다.</p>`},
   {k: "t04", t: "04 시나리오 — 정치·재정과 환율 가정", h: `
     <p><b>의도</b> — "결과가 이렇게 나오면 어떤 선택이 유리한가"를 숫자로 비교합니다(결선 같은 큰 이벤트 대비).</p>
-    <ul><li><b>04-1 정치·재정 시나리오</b> — 우파 승리/룰라 재선 등 4개 시나리오의 확률·금리·환율·가산금리 <b>가정</b>(접이식 "가정 수정"에서 직접 입력). 결과는 PF32(고정) vs Selic vs IPCA+의 12개월 손익, 시나리오별 최선 종목, 분할 방식 제안, 가격·만기수익률 예측, 금리·환율 민감도. 확인 후 매수 가정(결과 확인 뒤 진입, 충격은 매수가에 이미 반영).</li>
+    <ul><li><b>04-1 정치·재정 시나리오</b> — 룰라 재선 이후 재정·정국 전개별 4개 시나리오(결선 전에는 우파 승리 시나리오 포함)의 확률·금리·환율·가산금리 <b>가정</b>(접이식 "가정 수정"에서 직접 입력). 결과는 PF32(고정) vs Selic vs IPCA+의 12개월 손익, 시나리오별 최선 종목, 분할 방식 제안, 가격·만기수익률 예측, 금리·환율 민감도. 확인 후 매수 가정(결과 확인 뒤 진입, 충격은 매수가에 이미 반영).</li>
     <li><b>달러표시 브라질 국채 비교와 이자 계산</b> — 수동 입력 시세(5종)로 PF32와 비교. 시세가 3일 넘으면 경고가 뜹니다. 이자(배당)는 달러채만 발생합니다(PF32는 제로쿠폰).</li>
-    <li><b>04-2 헤알채 vs 달러채</b> — 환율 가정별(기본값은 최근 5년 실제 환율에서 계산) ${RT.kr} 만기수익률. 환율 가정은 입력칸으로 수정, "기본값으로"로 되돌립니다. 아래에 가정별 과거 발생 구간과 3국 정권·주요 이벤트 표(인과관계를 단정할 수 없음).</li>
+    <li><b>04-2 헤알채 vs 달러채</b> — 환율 가정별(기본값은 최근 5년 실제 환율에서 계산) ${RT.kr} 만기수익률. 환율 가정은 입력칸으로 수정, "기본값으로"로 되돌립니다. 가정은 6종(마지막은 <b>달러 약세형</b>: 달러 연 -3%·헤알 -2.3%, 스트레스). 아래에 가정별 과거 발생 구간과 3국 정권·주요 이벤트 표(인과관계를 단정할 수 없음).</li>
     <li><b>매수 방법 점검표</b> — 04-1 하단 접이식(재정 점검표 아래). 국내 증권사 장외 매수 절차: 경로·상품(LTN 2032 또는 NTN-F 대체), 증권사 3곳 비교 질문, 비과세 서면 확인, 판단 기준(마진 0.3%p), 계좌·기록. 출처는 전략 문서 7장이며 현재 조건은 증권사에 문의해야 합니다.</li>
     <li><b>재정 신호 점검표</b> — 04-1 하단 접이식. 인선(재무장관·중앙은행)·정책(재정 목표·준칙·예산)·시장 반응(금리·환율·Copom)을 직접 체크합니다. 항목은 공개 calendar.json, 체크 상태는 이 기기에만 저장되고, 결선 전후 GitHub 알림 이슈에도 같은 항목이 붙습니다.</li></ul>
     <p class=note>시나리오 확률과 환율·금리 반응은 <b>예측이 아니라 입력 가정</b>입니다. 모든 가정의 단일 출처는 이 탭입니다.</p>`},
