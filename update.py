@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """PF32 데이터 업데이터 — 환율(BRL/KRW)·브라질 국채 CSV를 내려받아 data/data.json 생성.
 표준 라이브러리만 사용. 매일 실행해도 안전(ETag/Range 이어받기, 변경 없으면 건너뜀)."""
-import csv, glob, json, os, shutil, subprocess, sys, time, urllib.request, urllib.error
+import csv, io, glob, json, os, shutil, subprocess, sys, time, urllib.request, urllib.error
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
@@ -370,7 +370,10 @@ def fetch_investir():
         for i in range(3):
             try:
                 with urllib.request.urlopen(urllib.request.Request(INVESTIR_URL, headers={"User-Agent": "Mozilla/5.0"}), timeout=30) as r:
-                    tmp.write_bytes(r.read())
+                    raw = r.read()
+                try: raw.decode("utf-8")
+                except UnicodeDecodeError: raw = raw.decode("cp1252").encode("utf-8")   # 서버가 가끔 ISO-8859-1(cp1252)로 보냄 → 열 이름 'Título'가 깨져 KeyError 였음
+                tmp.write_bytes(raw)
                 break
             except Exception as e:
                 err = e; time.sleep(5 * 3 ** i)
@@ -391,16 +394,19 @@ def newest_investir():
 
 
 def read_investir(path):
+    """열 이름이 서버 쪽에서 가끔 깨져(U+FFFD) 오므로 헤더 이름 대신 열 위치(제목·수익률·최소투자·PU·만기)로 읽는다."""
+    raw = Path(path).read_bytes()
+    try: txt = raw.decode("utf-8-sig")
+    except UnicodeDecodeError: txt = raw.decode("cp1252")
+    rd = csv.reader(io.StringIO(txt, newline=""), delimiter=";"); next(rd, None)
     rows = []
-    with open(path, encoding="utf-8-sig", newline="") as f:
-        for r in csv.DictReader(f, delimiter=";"):
-            name = r["Título"].strip()
-            tipo = name.rsplit(" ", 1)[0] if name.rsplit(" ", 1)[-1].isdigit() else name
-            ry = r["Rendimento anual do título"].strip()
-            rate = None if "SELIC" == ry else num(ry.split("+")[-1])
-            rows.append({"name": name, "key": f"{tipo}|{r['Vencimento do Título'].strip()}", "yield_text": ry,
-                         "rate": rate, "min_invest": num(r["Investimento mínimo"]),
-                         "pu": num(r["Preço unitário de investimento"]), "venc": r["Vencimento do Título"].strip()})
+    for r in rd:
+        if len(r) < 5 or not r[0].strip(): continue
+        name, ry, mi, pu, venc = (x.strip() for x in r[:5])
+        tipo = name.rsplit(" ", 1)[0] if name.rsplit(" ", 1)[-1].isdigit() else name
+        rate = None if "SELIC" == ry else num(ry.split("+")[-1])
+        rows.append({"name": name, "key": f"{tipo}|{venc}", "yield_text": ry, "rate": rate, "min_invest": num(mi), "pu": num(pu), "venc": venc})
+    if not rows: raise ValueError("Investir CSV 행 없음")
     return rows
 
 
