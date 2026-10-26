@@ -1036,6 +1036,46 @@ function maturityHtml(m) {   // 만기 금액 계산: 투자금(04-1·05와 공�
     </tbody></table></div>
     <div class="note">${RT.kn} 표의 +%·연 %는 환율 반영·물가 미보정 값이고, ${RT.kr} 마지막 행은 한국 물가로 현재 구매력을 환산한 금액입니다. 환율 가정은 <b>예측이 아니라 가정</b>입니다(04-2 값과 같음). 세금(브라질·한국)·수수료·환전비용·매도 시 가격 차이는 포함하지 않았습니다. 중도 매도하면 시장가격으로 팔아야 하므로 이 금액과 다릅니다.</div></div>`;
 }
+// ---------- 02 탭: 진입 타이밍 판단 (매일 자동 갱신) ----------
+// 선거 전 마지막 시세(기준) 대비 PF32 YTM 이동폭이 시나리오 충격(S1~S4의 dy)의 어느 수준인지, 시세 최신성·안정성·가격 신호·손절 정합·이벤트·환율을 한 번에 점검해 대기/소액 1차/분할 확대를 제안
+const ENTRY_BASE_DATE = "2026-10-25";   // 결선일: 이 날짜 이전 마지막 시세를 '충격 전 기준'으로 사용
+function entryHtml(m) {
+  const td = new Date(Date.now() + 9 * 36e5).toISOString().slice(0, 10), dd = (a, b) => Math.round((Date.parse(a) - Date.parse(b)) / 864e5);
+  const hist = (D.series[C.tracked.label] || []).slice(), pxDate = m.useLive && D.live_info ? D.live_info.mtime.slice(0, 10) : (m.last ? m.last[0] : null);
+  const pts = hist.map(r => [r[0], r[1]]); if (m.useLive && pxDate && (!pts.length || pts.at(-1)[0] < pxDate)) pts.push([pxDate, m.ytm]);
+  const base = [...pts].reverse().find(q => q[0] <= ENTRY_BASE_DATE), post = pts.filter(q => q[0] > ENTRY_BASE_DATE);
+  const lag = pxDate ? dd(td, pxDate) : null, stale = lag == null || lag > 4;
+  const P = POL(), shock = base ? (m.ytm - base[1]) * 100 : null;
+  const near = shock == null ? null : P.sc.map((s, i) => [Math.abs(s.dy - shock), i]).sort((a, b) => a[0] - b[0])[0][1];
+  const r = polCalc(m), sg = buySignals(m), sp = stopPf(m), sf = stopFx(m);
+  const last3 = post.slice(-4), steady = last3.length >= 3 ? Math.max(...last3.map(q => q[1])) - Math.min(...last3.map(q => q[1])) <= 0.15 : null;
+  const dir = post.length >= 2 ? post.at(-1)[1] - post[0][1] : null;
+  const cal = D.cal && D.cal.events ? D.cal.events.filter(e => e.date && !e.weekly && dd(e.date, td) >= 0 && dd(e.date, td) <= 3) : [];
+  const upN = r.rows.reduce((a, y) => a + y.w * y.pd.reduce((q, v, k) => q + (PD_BPS[k] >= 100 ? v : 0), 0) / (y.pd.reduce((q, v) => q + v, 0) || 1) * 100, 0);
+  const ok = "<b style='color:var(--ok)'>✔</b>", no = "<b style='color:var(--bad)'>✖</b>", wt = "<b>⏸</b>", un = "<b>?</b>";
+  const items = [
+    [stale ? no : ok, "시세 최신성", pxDate ? `PF32 시세 기준 ${pxDate} (${lag}일 전)${stale ? " — 선거 이후 시세가 아님. 📂 CSV(Investir) 업로드 또는 설정 확인 필요" : ""}` : "시세 없음"],
+    [shock == null ? un : shock >= 50 ? ok : wt, "충격 반영도", shock == null ? "기준 시세 없음" : `선거 전(${base[0]}) ${f2(base[1])}% → 현재 ${f2(m.ytm)}% = ${shock >= 0 ? "+" : ""}${f2(shock, 0)}bp · 가장 가까운 시나리오 ${P.sc[near].name.split(" ")[0]}(직후 ${P.sc[near].dy > 0 ? "+" : ""}${P.sc[near].dy}bp)${shock < 50 ? " — 충격이 아직 가격에 안 들어왔을 수 있음" : ""}`],
+    [steady == null ? un : steady ? ok : no, "안정성", steady == null ? `선거 이후 시세 ${post.length}일치 — 판단하려면 3일 이상 필요` : `최근 ${last3.length}일 YTM 범위 ${f2(Math.max(...last3.map(q => q[1])) - Math.min(...last3.map(q => q[1])), 2)}%p${steady ? " (0.15%p 이하 = 안정)" : " (변동 큼)"}`],
+    [dir == null ? un : dir <= 0.1 ? ok : no, "추세", dir == null ? "선거 이후 비교 불가" : `선거 이후 YTM ${dir >= 0 ? "+" : ""}${f2(dir * 100, 0)}bp ${dir > 0.1 ? "· 금리 상승 중(가격 하락 진행)" : "· 상승 멈춤"}`],
+    [sg.p1.on ? ok : no, "가격 신호", `실질 YTM ${f2(sg.p1.real, 2)}% vs 기준 ${f2(BR(0), 1)}% (${sg.p1.on ? "충족" : "미충족"})`],
+    [sp.worst >= sp.sr ? ok : no, "손절 정합", `환율 가정 최악 ${pct(sp.worst, 1)} vs 손절 기준 ${f2(sp.sr, 1)}%${sf && sf.near ? " · 손절 환율 근접" : ""}`],
+    [r.evK[0] >= r.evK[1] ? ok : no, "시나리오 기대값", `원화 EV PF32 ${pct(r.evK[0], 1)} vs Selic ${pct(r.evK[1], 1)} (04-1 가정)`],
+    [cal.length ? wt : ok, "이벤트", cal.length ? cal.map(e => `D-${dd(e.date, td)} ${e.title}`).join(" · ") + " — 직전·직후 변동 확대 가능" : "3일 내 주요 일정 없음"]];
+  const hard = [stale, sp.worst < sp.sr, sf && sf.near].some(Boolean);
+  let verdict, cls, why;
+  if (stale) { verdict = "판단 보류"; cls = "bad"; why = "시세가 낡아 선거 충격을 모릅니다. 최신 PU·수익률을 먼저 갱신하세요."; }
+  else if (hard) { verdict = "대기"; cls = "bad"; why = "손절 규칙 미달 또는 손절 환율 근접 — 신규 진입 금지."; }
+  else if (shock != null && shock < 50) { verdict = "대기 (충격 미반영)"; cls = ""; why = "금리가 선거 전과 거의 같습니다. 시장 반응이 더 나올 수 있습니다."; }
+  else if (steady === false || (dir != null && dir > 0.1)) { verdict = "대기 (금리 상승 중)"; cls = ""; why = "아직 올라가는 중입니다. 상승이 멈추고 3일 이상 안정되면 1차를 검토합니다."; }
+  else if (steady == null) { verdict = "대기 (관찰 부족)"; cls = ""; why = "충격 이후 시세가 3일 미만입니다."; }
+  else if (sg.p1.on && cal.length === 0) { verdict = "1차 소액 진입 검토 (20~30%)"; cls = "go"; why = "충격 반영·안정·가격 신호·손절 정합이 모두 충족됐습니다. 나머지는 사다리·재정 신호 확인 후."; }
+  else { verdict = "이벤트 후 1차 검토"; cls = ""; why = cal.length ? "일정 직전·직후 변동이 커서 지나고 확인합니다." : "가격 신호가 미충족입니다."; }
+  let hs = {}; try { hs = JSON.parse(localStorage.getItem("pf32entry") || "{}"); hs[td] = verdict; const ks = Object.keys(hs).sort().slice(-14); hs = Object.fromEntries(ks.map(k => [k, hs[k]])); localStorage.setItem("pf32entry", JSON.stringify(hs)); } catch (e) {}
+  return `<div class="callout ${cls}" style="margin-top:10px"><b>🎯 진입 타이밍 판단 (매일 자동 갱신)</b> — <b style="font-size:16px">${verdict}</b><br><small>${why}</small>
+    <table class=mono style="margin-top:6px;width:100%"><tbody>${items.map(([ic, n, t]) => `<tr><td style="width:24px">${ic}</td><td style="white-space:nowrap;padding-right:8px"><b>${n}</b></td><td style="white-space:normal">${t}</td></tr>`).join("")}</tbody></table>
+    <div class=note style="margin-top:6px"><b>진입 배경</b> — 시나리오 가정상 향후 12개월 금리가 +100bp 이상 오를 확률은 약 ${f2(upN, 0)}%(04-1 시나리오 확률 가중, 과거 분포)이고 이는 가격 -4.6% 안팎입니다. 그래서 충격 직후 한 번에 사지 않고, <b>충격 반영 → 안정 → 가격 신호·손절 정합 → 이벤트 통과</b> 순서로 나눠 진입합니다. 판정은 데이터가 갱신될 때마다 다시 계산되며 투자 권유가 아닌 규칙 기반 점검표입니다.${Object.keys(hs).length > 1 ? `<br>최근 판정: ${Object.entries(hs).slice(-7).map(([d, v]) => `${d.slice(5)} ${v.split(" ")[0]}`).join(" · ")} <small>(이 기기 기록)</small>` : ""}</div></div>`;
+}
 function ladderHtml(m) {
   const cb = consistentBuy(m), sg = cb.sg, S = C.stages.find(x => !x.filled), kN = INF().kr, cs = C.rc3 && C.rc3.length ? C.rc3 : rcDef();
   const gs = stopCases().map(c => c[0]), ann = (y, g) => ((1 + y / 100) * (1 + g / 100) - 1) * 100;
@@ -1069,6 +1109,7 @@ V.stages = m => {
       <div class="card" style="${sp.worst < sp.sr ? "border:2px solid var(--bad)" : ""}"><small>손절 기준 ·</small> ${RT.kr}<b class=mono>${f2(sp.sr, 1)}%</b><div class=note>PF32 최악 환율 가정 <span style="font-weight:700">${pct(sp.worst, 1)}</span> ${sp.worst < sp.sr ? '<span class=neg style="font-weight:700">⚠ 미달</span>' : '<span class=pos style="font-weight:700">✔ 충족</span>'} · 헤알이 연 <span style="font-weight:700">${pct(sp.lim, 1)}</span> 아래(1년 뒤 BRL/KRW ≈ ${f2(sp.limFx, 1)})면 미달${m.fx ? ` · 손절 환율 <span style="font-weight:700">${f2(sf.level, 1)}</span>(${sf.byEntry ? "평균 매수 환율 " + f2(sf.anchor, 1) : "현재 환율"} 기준 · 현재 대비 ${pct((sf.level / m.fx - 1) * 100, 1)})` : ""} · 상세는 01 탭</div></div>
       <div class="card" style="${tg.reached ? "border:2px solid var(--ok)" : ""}"><small>수익 TARGET · 실질 <input class=noprint type=number step=0.5 min=0 max=30 value="${tg.tr}" onchange="targetEdit(this)" style="width:46px;text-align:right;padding:1px 3px;font-size:11px;display:inline-block">%</small><b class=mono>${f2(tg.line)}</b><div class=note>${tg.reached ? '<span class=pos style="font-weight:700">🎯 도달</span> · ' : ""}현재가 대비 <span style="font-weight:700">${pct((tg.line / m.price - 1) * 100)}</span> · ${m.filledPct > 0 && m.avg ? "평균 체결 " + f2(m.avg) + " 대비 " + pct((tg.line / m.avg - 1) * 100) : "전 단계 체결 시 평균 " + f2(m.avgAll) + " 대비 " + pct((tg.line / m.avgAll - 1) * 100)} · 헤알 실질이 ${tg.tr}%로 줄면 정리 검토(PU 선은 시간이 지나면 올라감)</div></div>
     </div>
+    ${entryHtml(m)}
     ${ladderHtml(m)}
     ${maturityHtml(m)}
     <div class=note>※ 평균 체결가는 설정의 체결가 × 비중으로 직접 계산합니다.</div>
@@ -1328,7 +1369,7 @@ const HELP = [
     <ol><li>알림 확인(GitHub 앱, Mac 알림센터). 알림이 없으면 새로 켜진 신호가 없다는 뜻입니다.</li>
       <li>화면 맨 위의 "자동갱신" 시각이 오늘인지, "자동 갱신 멈춤"·환율 지연 경고가 없는지 봅니다.</li>
       <li>매수 지표 박스에서 ON 여부와 🔔 개수, 손절 지표 박스에서 상태 변화를 봅니다.</li>
-      <li>02 탭에서 "체결 조건 충족" 표시가 있는지 봅니다.</li></ol>
+      <li>02 탭에서 "체결 조건 충족" 표시가 있는지 봅니다. 큰 이벤트(선거 등) 직후에는 02 탭 <b>🎯 진입 타이밍 판단</b>을 봅니다 — 시세 최신성·충격 반영도(선거 전 대비 YTM 이동 vs 시나리오 충격)·안정성·추세·가격 신호·손절 정합·시나리오 기대값·이벤트를 점검해 판단 보류/대기/1차 소액 검토를 제안하며 데이터가 갱신될 때마다 다시 계산됩니다(규칙 기반 점검표, 투자 권유 아님).</li></ol>
     <p><b>매수 직전에 꼭</b> — 앱의 PU는 <b>매수 쪽 가격</b>이고 매도가는 약 0.6% 낮습니다. 실제 주문은 증권사 호가로 확인하세요. 데이터는 하루 두 번 갱신되므로 신호 시점과 지금 사이에 가격이 움직였을 수 있습니다. 달러채 시세는 수동 입력값입니다.</p>
     <p><b>체결 후</b> — 설정 탭에 체결가·날짜·체결 체크를 입력하고, 폰에도 "설정 복사 → 붙여넣기"를 하세요. <b>주 1회</b> — 달러채 시세 갱신, 기준값 재검토, 큰 이벤트 전후 04-1 시나리오 확률 확인.</p>`},
   {k: "terms", t: "용어·개념 사전", h: `
