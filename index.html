@@ -1041,7 +1041,9 @@ function maturityHtml(m) {   // 만기 금액 계산: 투자금(04-1·05와 공�
 const ENTRY_BASE_DATE = "2026-10-25";   // 결선일: 이 날짜 이전 마지막 시세를 '충격 전 기준'으로 사용
 function entryHtml(m) {
   const td = new Date(Date.now() + 9 * 36e5).toISOString().slice(0, 10), dd = (a, b) => Math.round((Date.parse(a) - Date.parse(b)) / 864e5);
-  const hist = (D.series[C.tracked.label] || []).slice(), pxDate = m.useLive && D.live_info ? D.live_info.mtime.slice(0, 10) : (m.last ? m.last[0] : null);
+  // Investir CSV 에는 시세 날짜가 없다: 받은 시각(KST) 이전에 마감(브라질 17:30 = 다음 날 05:30 KST)한 가장 최근 평일의 종가로 본다
+  const quoteDay = mt => { const t = Date.parse(mt + ":00+09:00"); for (let k = 0; k < 6; k++) { const d = new Date(t - k * 864e5 + 9 * 36e5), ds = d.toISOString().slice(0, 10), wd = d.getUTCDay(); if (wd >= 1 && wd <= 5 && Date.parse(ds + "T05:30:00+09:00") + 864e5 <= t) return ds; } return null; };
+  const hist = (D.series[C.tracked.label] || []).slice(), pxDate = m.useLive && D.live_info ? quoteDay(D.live_info.mtime) : (m.last ? m.last[0] : null);
   const pts = hist.map(r => [r[0], r[1]]); if (m.useLive && pxDate && (!pts.length || pts.at(-1)[0] < pxDate)) pts.push([pxDate, m.ytm]);
   const base = [...pts].reverse().find(q => q[0] <= ENTRY_BASE_DATE), post = pts.filter(q => q[0] > ENTRY_BASE_DATE);
   const lag = pxDate ? dd(td, pxDate) : null, stale = lag == null || lag > 4;
