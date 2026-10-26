@@ -1078,6 +1078,32 @@ function entryHtml(m) {
     <table class=mono style="margin-top:6px;width:100%"><tbody>${items.map(([ic, n, t]) => `<tr><td style="width:24px">${ic}</td><td style="white-space:nowrap;padding-right:8px"><b>${n}</b></td><td style="white-space:normal">${t}</td></tr>`).join("")}</tbody></table>
     <div class=note style="margin-top:6px"><b>진입 배경</b> — 시나리오 가정상 향후 12개월 금리가 +100bp 이상 오를 확률은 약 ${f2(upN, 0)}%(04-1 시나리오 확률 가중, 과거 분포)이고 이는 가격 -4.6% 안팎입니다. 그래서 충격 직후 한 번에 사지 않고, <b>충격 반영 → 안정 → 가격 신호·손절 정합 → 이벤트 통과</b> 순서로 나눠 진입합니다. 판정은 데이터가 갱신될 때마다 다시 계산되며 투자 권유가 아닌 규칙 기반 점검표입니다.${Object.keys(hs).length > 1 ? `<br>최근 판정: ${Object.entries(hs).slice(-7).map(([d, v]) => `${d.slice(5)} ${v.split(" ")[0]}`).join(" · ")} <small>(이 기기 기록)</small>` : ""}</div></div>`;
 }
+// ---------- 02 탭: 극단 스트레스 손실 · 투자 상한 ----------
+// 갭 하락이면 손절 환율을 건너뛰어 체결되므로, 극단 가정(진입 후 금리 상승 dy bp·헤알 환율 fx %)에서의 12개월 원화 손실로 투자 규모를 제한한다. 확률이 아니라 '견딜 수 있는 손실 한도' 점검용
+const STRESS_DEF = {dy: 350, fx: -21, lim: 0};
+const STRESS = () => Object.assign({}, STRESS_DEF, C.stress || {});
+function stressEdit(el) {
+  const v = parseFloat(el.value); if (isNaN(v)) return;
+  if (!C.stress) C.stress = {}; C.stress[el.dataset.k] = v;
+  try { localStorage.setItem("pf32cfg", JSON.stringify(C)); } catch (e) {}
+  if (LOCAL) fetch("/api/config", {method: "POST", body: JSON.stringify(C)}).catch(() => {});
+  render(true);
+}
+function stressHtml(m) {
+  const S = STRESS(), A = USD_INC().amt, P = POL(), sf = stopFx(m), D0 = yearsTo(C.tracked.venc) / (1 + m.ytm / 100), kr = INF().kr;
+  const calc = (y0, dy, fx) => { const brl = y0 - D0 * dy / 100, krw = ((1 + brl / 100) * (1 + fx / 100) - 1) * 100; return {brl, krw, real: real(krw, kr)}; };
+  const s4 = P.sc[P.sc.length - 1], rows = [
+    ["지금 진입 → 극단", calc(m.ytm, S.dy, S.fx), `YTM ${f2(m.ytm)}%에서 매수 후 금리 +${f2(S.dy, 0)}bp · 환율 ${f2(S.fx, 0)}%`],
+    [`${s4.name.split(" ")[0]} 충격 후 진입 → 극단의 절반`, calc(m.ytm + s4.dy / 100, S.dy / 2, S.fx / 2), `YTM ${f2(m.ytm + s4.dy / 100)}%(직후 +${s4.dy}bp)에서 매수 후 금리 +${f2(S.dy / 2, 0)}bp · 환율 ${f2(S.fx / 2, 0)}%`]];
+  const worst = Math.min(...rows.map(x => x[1].krw)), cap = S.lim > 0 && worst < 0 ? S.lim / (-worst / 100) : null, fxLv = m.fx * (1 + S.fx / 100);
+  const inp = (k, v, w) => `<input class=noprint type=number step=any data-k="${k}" value="${v}" onchange="stressEdit(this)" style="width:${w}px;text-align:right;padding:1px 3px">`;
+  return `<div class=callout style="margin-top:10px"><b>🧯 극단 스트레스 — 손실 한도로 투자 규모 정하기</b> <small>(확률이 아니라 견딜 수 있는 손실 확인용 · 가정은 직접 수정)</small>
+    <div style="margin:4px 0">금리 +${inp("dy", S.dy, 56)}bp · 헤알 환율 ${inp("fx", S.fx, 52)}% (BRL/KRW ${f2(fxLv, 0)}) · 손실 한도 ${inp("lim", S.lim || "", 66)}만원 · 투자금 <b class=mono>${f2(A, 0)}</b>만원 <small>(04·05 탭과 공유)</small></div>
+    <div class=tbl><table class=mono><thead><tr><th>경우 (12개월)</th><th class=r>헤알 손익 ${RT.n}</th><th class=r>원화 손익 ${RT.kn}</th><th class=r>투자금 기준 손익</th></tr></thead><tbody>
+    ${rows.map(([n, c, d]) => `<tr><td style="white-space:normal"><b>${n}</b><br><small>${d}</small></td><td class=r>${pct(c.brl, 1)}</td><td class=r><b ${c.krw < 0 ? 'style="color:var(--bad)"' : ""}>${pct(c.krw, 1)}</b></td><td class=r>${c.krw >= 0 ? "+" : ""}${f2(A * c.krw / 100, 0)}만원</td></tr>`).join("")}</tbody></table></div>
+    <div class=note>${cap != null ? `손실 한도 ${f2(S.lim, 0)}만원 기준 <b>투자 상한 약 ${f2(cap, 0)}만원</b>${cap < A ? ` — 입력한 투자금 ${f2(A, 0)}만원은 상한을 <b style="color:var(--bad)">${f2(A / cap * 100 - 100, 0)}% 초과</b>` : " — 입력한 투자금은 상한 이내"} (최악 경우 ${pct(worst, 1)} 기준). 분할 1차는 이 상한의 일부만으로 시작하세요.` : "손실 한도(만원)를 입력하면 투자 상한이 계산됩니다."}
+    손절 환율은 ${sf && sf.level ? f2(sf.level, 0) : "—"}이지만 갭 하락(예: 월요일 개장)이면 그 아래에서 체결될 수 있어, 손절보다 <b>처음 투자 규모</b>로 위험을 제한합니다. 극단 값은 리포트·가정치이며 예측이 아닙니다. 세금·수수료 미반영.</div></div>`;
+}
 function ladderHtml(m) {
   const cb = consistentBuy(m), sg = cb.sg, S = C.stages.find(x => !x.filled), kN = INF().kr, cs = C.rc3 && C.rc3.length ? C.rc3 : rcDef();
   const gs = stopCases().map(c => c[0]), ann = (y, g) => ((1 + y / 100) * (1 + g / 100) - 1) * 100;
@@ -1112,6 +1138,7 @@ V.stages = m => {
       <div class="card" style="${tg.reached ? "border:2px solid var(--ok)" : ""}"><small>수익 TARGET · 실질 <input class=noprint type=number step=0.5 min=0 max=30 value="${tg.tr}" onchange="targetEdit(this)" style="width:46px;text-align:right;padding:1px 3px;font-size:11px;display:inline-block">%</small><b class=mono>${f2(tg.line)}</b><div class=note>${tg.reached ? '<span class=pos style="font-weight:700">🎯 도달</span> · ' : ""}현재가 대비 <span style="font-weight:700">${pct((tg.line / m.price - 1) * 100)}</span> · ${m.filledPct > 0 && m.avg ? "평균 체결 " + f2(m.avg) + " 대비 " + pct((tg.line / m.avg - 1) * 100) : "전 단계 체결 시 평균 " + f2(m.avgAll) + " 대비 " + pct((tg.line / m.avgAll - 1) * 100)} · 헤알 실질이 ${tg.tr}%로 줄면 정리 검토(PU 선은 시간이 지나면 올라감)</div></div>
     </div>
     ${entryHtml(m)}
+    ${stressHtml(m)}
     ${ladderHtml(m)}
     ${maturityHtml(m)}
     <div class=note>※ 평균 체결가는 설정의 체결가 × 비중으로 직접 계산합니다.</div>
@@ -1371,7 +1398,7 @@ const HELP = [
     <ol><li>알림 확인(GitHub 앱, Mac 알림센터). 알림이 없으면 새로 켜진 신호가 없다는 뜻입니다.</li>
       <li>화면 맨 위의 "자동갱신" 시각이 오늘인지, "자동 갱신 멈춤"·환율 지연 경고가 없는지 봅니다.</li>
       <li>매수 지표 박스에서 ON 여부와 🔔 개수, 손절 지표 박스에서 상태 변화를 봅니다.</li>
-      <li>02 탭에서 "체결 조건 충족" 표시가 있는지 봅니다. 큰 이벤트(선거 등) 직후에는 02 탭 <b>🎯 진입 타이밍 판단</b>을 봅니다 — 시세 최신성·충격 반영도(선거 전 대비 YTM 이동 vs 시나리오 충격)·안정성·추세·가격 신호·손절 정합·시나리오 기대값·이벤트를 점검해 판단 보류/대기/1차 소액 검토를 제안하며 데이터가 갱신될 때마다 다시 계산됩니다(규칙 기반 점검표, 투자 권유 아님).</li></ol>
+      <li>02 탭에서 "체결 조건 충족" 표시가 있는지 봅니다. 큰 이벤트(선거 등) 직후에는 02 탭 <b>🎯 진입 타이밍 판단</b>을 봅니다 — 시세 최신성·충격 반영도(선거 전 대비 YTM 이동 vs 시나리오 충격)·안정성·추세·가격 신호·손절 정합·시나리오 기대값·이벤트를 점검해 판단 보류/대기/1차 소액 검토를 제안하며 데이터가 갱신될 때마다 다시 계산됩니다(규칙 기반 점검표, 투자 권유 아님). 바로 아래 <b>🧯 극단 스트레스</b>는 금리·환율 극단 가정(직접 수정)에서 12개월 원화 손실을 계산하고, 손실 한도를 넣으면 <b>투자 상한</b>을 보여 줍니다 — 갭 하락이면 손절 환율을 건너뛰고 체결될 수 있어 손절보다 처음 투자 규모로 위험을 제한하는 용도이며 예측이 아닙니다.</li></ol>
     <p><b>매수 직전에 꼭</b> — 앱의 PU는 <b>매수 쪽 가격</b>이고 매도가는 약 0.6% 낮습니다. 실제 주문은 증권사 호가로 확인하세요. 데이터는 하루 두 번 갱신되므로 신호 시점과 지금 사이에 가격이 움직였을 수 있습니다. 달러채 시세는 수동 입력값입니다.</p>
     <p><b>체결 후</b> — 설정 탭에 체결가·날짜·체결 체크를 입력하고, 폰에도 "설정 복사 → 붙여넣기"를 하세요. <b>주 1회</b> — 달러채 시세 갱신, 기준값 재검토, 큰 이벤트 전후 04-1 시나리오 확률 확인.</p>`},
   {k: "terms", t: "용어·개념 사전", h: `
@@ -1564,7 +1591,7 @@ function glPick(i) {
   e.scrollIntoView({behavior: "smooth", block: "start"}); e.classList.remove("glflash"); void e.offsetWidth; e.classList.add("glflash");
 }
 
-const CFG_KEYS = ["ktb", "stages", "target_real", "extra_fx_rows", "fx_range", "buy_real", "stop_real", "mk", "cal_plan", "cal_zone", "cal_watch", "pol", "usd_inc", "rc3", "pos", "sim"];
+const CFG_KEYS = ["ktb", "stages", "target_real", "extra_fx_rows", "fx_range", "buy_real", "stop_real", "mk", "cal_plan", "cal_zone", "cal_watch", "pol", "usd_inc", "stress", "rc3", "pos", "sim"];
 async function exportCfg() {
   const o = {}; CFG_KEYS.forEach(k => { if (C[k] !== undefined) o[k] = C[k]; });
   const t = JSON.stringify(o);
