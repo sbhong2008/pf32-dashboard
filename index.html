@@ -84,6 +84,10 @@ details.fold>summary::before{content:"▸ "}details.fold[open]>summary::before{c
 details.fold>div{padding:8px 10px}
 tr.hl td{background:var(--soft)}
 tr.hl-bad td{background:var(--badbg)}
+tr.hl-now td{background:var(--okbg);box-shadow:inset 3px 0 0 var(--ok)}
+td.cbest{background:var(--okbg)}
+.nowtag{display:inline-block;background:var(--ok);color:#fff;font-size:10px;font-weight:700;padding:0 5px;margin-left:4px}
+@media (prefers-color-scheme:dark){.nowtag{color:#000}}
 @media (max-width:560px){.tbl td:first-child,.tbl th:first-child{min-width:74px}.hero .big{font-size:32px}}
 .rng{position:relative;height:18px;border:1px solid var(--ink);margin:14px 0 4px}
 .rng i{position:absolute;top:-6px;bottom:-6px;width:3px;background:var(--ink)}
@@ -466,11 +470,19 @@ function fiscalChk() {
   const cal = D.cal; if (!cal) return "";
   return (cal.fiscal_checklist ? chkBlock(cal.fiscal_title || "재정 신호 점검표", cal.fiscal_note, cal.fiscal_checklist, "") : "") + (cal.buy_checklist ? chkBlock(cal.buy_title || "매수 방법 점검표", cal.buy_note, cal.buy_checklist, "b") : "");
 }
+// 선거 전 마지막 시세 대비 현재 PF32 YTM 이동폭(bp)과 가장 가까운 시나리오 인덱스 (진입 판단 패널과 같은 기준)
+function nearScen(m, P) {
+  const hist = (D.series[C.tracked.label] || []), base = [...hist].reverse().find(q => q[0] <= ENTRY_BASE_DATE);
+  if (!base || !P.sc.length) return {i: -1, shock: null};
+  const shock = (m.ytm - base[1]) * 100;
+  return {i: P.sc.map((s, i) => [Math.abs(s.dy - shock), i]).sort((a, b) => a[0] - b[0])[0][1], shock};
+}
 function polSection(m) {
-  const r = polCalc(m), P = r.P, inp = (k, v, w = 68) => `<input type=number step=any data-k="${k}" value="${v}" style="width:${w}px;text-align:right" onchange="polEdit(this)">`;
+  const r = polCalc(m), P = r.P, nr = nearScen(m, P), nowTag = i => i === nr.i ? `<span class=nowtag>현재 근접 ${nr.shock >= 0 ? "+" : ""}${f2(nr.shock, 0)}bp</span>` : "",
+    inp = (k, v, w = 68) => `<input type=number step=any data-k="${k}" value="${v}" style="width:${w}px;text-align:right" onchange="polEdit(this)">`;
   const names = ["PF32(고정)", "Selic 연동", "IPCA+ 2032"];
   const best = arr => arr.indexOf(Math.max(...arr));
-  const cell = (arr, bi) => arr.map((v, j) => `<td class=r ${j === bi ? 'style="font-weight:700"' : ""}>${pct(v, 1)}</td>`).join("");
+  const cell = (arr, bi) => arr.map((v, j) => `<td class="r ${j === bi ? "cbest" : ""} ${v < 0 ? "neg" : ""}" ${j === bi ? 'style="font-weight:700"' : ""}>${pct(v, 1)}</td>`).join("");
   const sc = id => `document.getElementById('${id}').scrollIntoView({behavior:'smooth',block:'start'})`, bi = best(r.evK);
   return `<section id=s041><h2>04-1 정치·재정 시나리오 비교 — PF32 vs Selic vs IPCA+</h2><div class=body>
     <div class="subnav noprint"><button onclick="${sc("s041")}">04-1 정치·재정</button><button onclick="${sc("s041usd")}">달러채 비교</button><button onclick="${sc("s041inc")}">이자 계산</button><button onclick="${sc("s042")}">04-2 환율 가정</button></div>
@@ -483,12 +495,12 @@ function polSection(m) {
     <div class=note>확률 합 ${r.tw}%${r.tw !== 100 ? " → 정규화해 계산" : ""} · 룰라 승리 합계 ${f2(r.pLula, 0)}% · '직후' 값은 매수가에 이미 들어간 충격(매수 후 손익 아님), '진입 후' 값만 손익에 반영</div>
     </div></details>
     <div class=tbl style="margin-top:8px"><table class=mono><thead><tr><th rowspan=2>시나리오</th><th class=r rowspan=2>PF32<br>진입 YTM ${RT.n}</th><th class=r colspan=3>헤알(BRL) 기준 12개월 손익 ${RT.n}</th><th class=r colspan=3>원화(KRW) 기준 12개월 손익 ${RT.kn}</th></tr><tr>${names.map(n => `<th class=r><small>${n}</small></th>`).join("")}${names.map(n => `<th class=r><small>${n}</small></th>`).join("")}</tr></thead><tbody>
-    ${r.rows.map(x => `<tr><td style="white-space:normal;min-width:220px">${x.name.split(" ")[0]} <small>${f2(x.w * 100, 0)}%</small><br><small>${x.desc || ""}</small></td><td class=r>${f2(x.yin, 2)}%</td>${cell(x.brlP, best(x.brlP))}${cell(x.krwP, best(x.krwP))}</tr>`).join("")}
+    ${r.rows.map((x, xi) => `<tr class="${xi === nr.i ? "hl-now" : ""}"><td style="white-space:normal;min-width:220px">${x.name.split(" ")[0]} <small>${f2(x.w * 100, 0)}%</small>${nowTag(xi)}<br><small>${x.desc || ""}</small></td><td class=r>${f2(x.yin, 2)}%</td>${cell(x.brlP, best(x.brlP))}${cell(x.krwP, best(x.krwP))}</tr>`).join("")}
     <tr style="border-top:2px solid var(--ink)"><td><b>기대값 EV</b></td><td></td>${cell(r.evB, best(r.evB))}${cell(r.evK, best(r.evK))}</tr>
-    <tr><td>EV 실질(원) ${RT.kr}</td><td colspan=4></td>${r.evKR.map(v => `<td class=r>${pct(v, 1)}</td>`).join("")}</tr></tbody></table></div>
+    <tr><td>EV 실질(원) ${RT.kr}</td><td colspan=4></td>${r.evKR.map(v => `<td class="r ${v < 0 ? "neg" : ""}">${pct(v, 1)}</td>`).join("")}</tr></tbody></table></div>
     <div class=note>${r.pLula >= 99.5 ? "결선 결과가 확정돼(룰라) 승패 확률 민감도는 해당이 없습니다. 위 시나리오 확률(충격의 크기)로 판단하세요." : r.be == null ? "확인 후 매수 기준으로는 룰라 승리 확률을 0~100%로 바꿔도 원화 기대수익에서 Selic 이 PF32 를 앞서지 않습니다 (진입 금리가 이미 올라 이자가 크기 때문 — 단 진입 후 추가 악화 가정 시 달라짐)." : (r.pLula > r.be ? `⚠ 룰라 승리 확률이 <b>${r.be}%</b>를 넘으면 (확인 후 매수 기준) 원화 기대수익은 Selic 이 PF32 를 앞섭니다 (현재 입력 ${f2(r.pLula, 0)}% → Selic 우위).` : `룰라 승리 확률이 <b>${r.be}%</b>를 넘으면 (확인 후 매수 기준) 원화 기대수익은 Selic 이 PF32 를 앞섭니다 (현재 입력 ${f2(r.pLula, 0)}% → PF32 우위).`)}</div>
     <div class=tbl style="margin-top:8px"><table class=mono><thead><tr><th>시나리오 (확인 후)</th><th class=r>원화 최선 종목</th><th class=r>2위와 차이</th><th>분할 매수 방식 (제안)</th></tr></thead><tbody>
-    ${r.rows.map(x => { const o = x.krwP.map((v, j) => [v, j]).sort((p, q) => q[0] - p[0]); const plan = x.side === "우파" ? (x.dy <= -30 ? "급등분 추격 금지 · 1단계 소액 후 눌림·재정 신호마다 추가" : "이미 반영 · 1단계 후 인선·예산 신호 확인하며 추가") : (x.dy >= 200 ? "초기엔 Selic 위주 · 1~2주 안정 확인 후 PF32 소액 · Copom·재정대책 신호 후 확대" : "1~2주 과매도 안정 후 분할 · Selic 병행"); return `<tr><td style="white-space:normal;min-width:220px">${x.name.split(" ")[0]} <small>${f2(x.w * 100, 0)}%</small><br><small>${x.desc || ""}</small></td><td class=r><b>${o[0][0] - o[1][0] < 0.05 ? o.filter(t => o[0][0] - t[0] < 0.05).map(t => names[t[1]].split("(")[0]).join("=") + " 동률" : names[o[0][1]]}</b></td><td class=r>${o[0][0] - o[1][0] < 0.05 ? "—" : f2(o[0][0] - o[1][0], 1) + "%p"}</td><td style="white-space:normal;min-width:240px">${plan}</td></tr>`; }).join("")}
+    ${r.rows.map((x, xi) => { const o = x.krwP.map((v, j) => [v, j]).sort((p, q) => q[0] - p[0]); const plan = x.side === "우파" ? (x.dy <= -30 ? "급등분 추격 금지 · 1단계 소액 후 눌림·재정 신호마다 추가" : "이미 반영 · 1단계 후 인선·예산 신호 확인하며 추가") : (x.dy >= 200 ? "초기엔 Selic 위주 · 1~2주 안정 확인 후 PF32 소액 · Copom·재정대책 신호 후 확대" : "1~2주 과매도 안정 후 분할 · Selic 병행"); return `<tr class="${xi === nr.i ? "hl-now" : ""}"><td style="white-space:normal;min-width:220px">${x.name.split(" ")[0]} <small>${f2(x.w * 100, 0)}%</small>${nowTag(xi)}<br><small>${x.desc || ""}</small></td><td class=r><b>${o[0][0] - o[1][0] < 0.05 ? o.filter(t => o[0][0] - t[0] < 0.05).map(t => names[t[1]].split("(")[0]).join("=") + " 동률" : names[o[0][1]]}</b></td><td class=r>${o[0][0] - o[1][0] < 0.05 ? "—" : f2(o[0][0] - o[1][0], 1) + "%p"}</td><td style="white-space:normal;min-width:240px">${plan}</td></tr>`; }).join("")}
     <tr style="border-top:2px solid var(--ink)"><td>시나리오별 최선 선택 시 EV</td><td class=r colspan=3><b>${pct(r.evBest, 1)}</b></td></tr></tbody></table></div>
     ${fiscalChk()}
     ${(() => {
