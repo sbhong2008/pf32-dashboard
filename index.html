@@ -1079,7 +1079,7 @@ function entryHtml(m) {
     [sg.p1.on ? ok : no, "가격 신호", `실질 YTM ${f2(sg.p1.real, 2)}% vs 기준 ${f2(BR(0), 1)}% (${sg.p1.on ? "충족" : "미충족"})`],
     [sp.worst >= sp.sr ? ok : no, "손절 정합", `환율 가정 최악 ${pct(sp.worst, 1)} vs 손절 기준 ${f2(sp.sr, 1)}%${sf && sf.near ? " · 손절 환율 근접" : ""}`],
     [r.evK[0] >= r.evK[1] ? ok : no, "시나리오 기대값", `원화 EV PF32 ${pct(r.evK[0], 1)} vs Selic ${pct(r.evK[1], 1)} (04-1 가정)`],
-    (eo => [eo.st === 2 ? ok : eo.st === 1 ? wt : no, "3요인(04-0)", `가치 ${f2(eo.V, 0)} · 캐리 ${f2(eo.C, 0)} · 모멘텀 ${f2(eo.M, 0)} — ${EO_LAB[eo.st]}${eo.st < 2 && eoProj(m) ? ` · 보합 시 충족 예상 ${eoProj(m).slice(5)}` : ""}`])(eoSeries(m, 0).at(-1)),
+    (eo => [eo.st === 2 ? ok : eo.st === 1 ? wt : no, "진입 점수(04-0)", `${f2(eo.S, 0)}점 — ${EO_LAB[eo.st]} (환율 가치 ${f2(eo.X, 0)} · 금리 가치 ${f2(eo.V, 0)} · 캐리 ${f2(eo.C, 0)})`])(eoSeries(m).at(-1)),
     [cal.length ? wt : ok, "이벤트", cal.length ? cal.map(e => `D-${dd(e.date, td)} ${e.title}`).join(" · ") + " — 직전·직후 변동 확대 가능" : "3일 내 주요 일정 없음"]];
   const hard = [stale, sp.worst < sp.sr, sf && sf.near].some(Boolean);
   let verdict, cls, why;
@@ -1183,89 +1183,119 @@ V.fx = m => {
   </div></section>`;
 };
 
-// ---------- 04-0 진입 최적화: 가치·캐리·모멘텀 3요인 (채권 운용사·EM 캐리 데스크의 표준 틀) ----------
-// 가치 V = 실질 YTM 의 최근 1년 백분위 · 캐리 C = 캐리 완충(12개월 손익분기 금리 상승 ÷ 과거 12개월 금리 변동 σ)과 캐리 대비 환율 변동성(EM 캐리 트레이드 지표) 평균
-// 모멘텀 M = 헤알 20영업일 변화(50%) + PF32 금리 10영업일 변화(25%) + 금리 변동성 레짐(최근 20일 ÷ 1년 중앙값, 25%). 각 0~100점, 문턱(gV·gC·gM)을 모두 넘으면 '최적 진입 구간'
-const EO_DEF = {kr: 2.8, gV: 60, gC: 50, gM: 60};
-const EO = () => ({...EO_DEF, ...(C.eopt || {})});
-const EO_LAB = ["대기 — 가치·캐리 부족", "가치·캐리 충족 · 모멘텀 대기", "최적 진입 구간 — 3요인 충족"];
+// ---------- 04-0 진입 최적화: 환율 가치·금리 가치·캐리 점수 (높을수록 좋은 진입) ----------
+// 원화 투자자의 결과는 진입 시점 BRL/KRW 수준이 좌우: 과거(2021-11~2025-11 시작) 환율 가치(최근 3·5년 백분위 반전)와 12개월 뒤 환율 변화의 순위상관 약 +0.7, 단기 모멘텀은 약 −0.1(예측력 없음) → 모멘텀은 점수에서 제외하고 참고로만 표시
+// 점수 = 환율 가치 X 50% + 금리 가치 V 30% + 캐리 C 20%. 75점 이상 = 최적(상위), 55~75 = 보통, 55 미만 = 불리
+const EO_DEF = {kr: 2.8, hi: 75, lo: 55, c1: 0.25, c2: 0.5};   // c1 = 원↔달러 편도 환전 비용 %, c2 = 달러↔헤알 편도 %(원→달러→헤알→달러→원 4번 환전, 가정 — 증권사 적용 환율로 확인)
+const EO_COST = () => { const E = EO(); return Math.pow((1 - E.c1 / 100) * (1 - E.c2 / 100), 2); };   // 왕복(진입 2번 + 회수 2번) 후 남는 비율
+const EO = () => ({...EO_DEF, ...Object.fromEntries(Object.entries(C.eopt || {}).filter(([k]) => k in EO_DEF))});
+const EO_LAB = ["불리 — 헤알이 비싸거나 금리 매력 낮음", "보통", "최적 — 상위 점수 구간"];
 let eoMemo = {};
 function eoEdit(el) { const v = parseFloat(el.value); if (isNaN(v)) return; C.eopt = {...(C.eopt || {}), [el.dataset.k]: v}; eoMemo = {}; try { localStorage.setItem("pf32cfg", JSON.stringify(C)); } catch (e) {} if (LOCAL) fetch("/api/config", {method: "POST", body: JSON.stringify(C)}).catch(() => {}); render(true); }
 function eoReset() { delete C.eopt; eoMemo = {}; try { localStorage.setItem("pf32cfg", JSON.stringify(C)); } catch (e) {} if (LOCAL) fetch("/api/config", {method: "POST", body: JSON.stringify(C)}).catch(() => {}); render(true); }
 const lin = (x, a, b) => x == null || !isFinite(x) ? null : Math.max(0, Math.min(100, (x - a) / (b - a) * 100));   // a→0점, b→100점(a>b 면 낮을수록 높은 점수)
 const sdOf = a => { if (a.length < 2) return null; const mu = a.reduce((p, q) => p + q, 0) / a.length; return Math.sqrt(a.reduce((p, q) => p + (q - mu) ** 2, 0) / (a.length - 1)); };
-// 날짜별 3요인 점수. ahead>0 이면 마지막 날 뒤로 영업일 ahead 개를 가정 경로로 이어 붙임: flat = 금리·환율 보합, trend = 최근 20영업일 추세 지속
-function eoSeries(m, ahead = 60, mode = "flat") {
-  const E = EO(), key = [m.ytm, m.fx, ahead, mode, E.kr, E.gV, E.gC, E.gM, D.generated].join("|");
+const pctOf = (arr, v) => arr.filter(x => x <= v).length / arr.length * 100;
+const fxIdx = d => { const S = D.fx.series; let lo = 0, hi = S.length - 1, r = -1; while (lo <= hi) { const k = (lo + hi) >> 1; if (S[k][0] <= d) { r = k; lo = k + 1; } else hi = k - 1; } return r; };
+// 환율 가치: 그날 BRL/KRW 가 최근 3년·5년(영업일 756·1260) 중 몇 백분위인지의 평균을 뒤집은 값(쌀수록 높음)
+const fxValue = i => { const S = D.fx.series, v = S[i][1], w = n => S.slice(Math.max(0, i - n + 1), i + 1).map(r => r[1]); return 100 - (pctOf(w(756), v) + pctOf(w(1260), v)) / 2; };
+function eoSeries(m) {
+  const E = EO(), key = [m.ytm, m.fx, E.kr, E.hi, E.lo, D.generated].join("|");
   if (eoMemo[key]) return eoMemo[key];
-  const H = (D.series[C.tracked.label] || []).map(r => [r[0], r[1]]);
+  const H = (D.series[C.tracked.label] || []).map(r => [r[0], r[1], r[4] || r[2]]);
   if (H.length < 80) return [];
-  if (m.useLive && D.live_info && m.ytm != null) { const ld = D.live_info.mtime.slice(0, 10); if (ld > H.at(-1)[0]) H.push([ld, m.ytm]); }
+  if (m.useLive && D.live_info && m.ytm != null) { const ld = D.live_info.mtime.slice(0, 10); if (ld > H.at(-1)[0]) H.push([ld, m.ytm, m.price]); }
   const F = D.fx.series.filter(r => r[0] >= H[0][0]), dates = [...new Set([...H.map(r => r[0]), ...F.map(r => r[0])])].sort();
-  let hi = 0, fi = 0, y = H[0][1], f = F.length ? F[0][1] : m.fx;
-  const P = dates.map(d => { while (hi < H.length && H[hi][0] <= d) y = H[hi++][1]; while (fi < F.length && F[fi][0] <= d) f = F[fi++][1]; return {d, y, f, fut: false}; });
-  if (ahead > 0) {
-    const Lp = P.at(-1), n = Math.min(20, P.length - 1), B = P[P.length - 1 - n], gy = mode === "trend" ? (Lp.y - B.y) / n : 0, gf = mode === "trend" ? Math.pow(Lp.f / B.f, 1 / n) : 1;
-    let t = new Date(Lp.d + "T12:00:00Z"), yy = Lp.y, ff = Lp.f;
-    for (let k = 0; k < ahead;) { t = new Date(t.getTime() + 864e5); const wd = t.getUTCDay(); if (wd === 0 || wd === 6) continue; yy += gy; ff *= gf; P.push({d: t.toISOString().slice(0, 10), y: yy, f: ff, fut: true}); k++; }
-  }
-  const sdY = (D.yield_dist && D.yield_dist.sd) || 235, rl = P.map(p => real(p.y, inflAt(p.d)));
-  const dy = P.map((p, i) => i ? (p.y - P[i - 1].y) * 100 : 0), lf = P.map((p, i) => i ? Math.log(p.f / P[i - 1].f) : 0);
-  const v20 = P.map((_, i) => i >= 20 ? sdOf(dy.slice(i - 19, i + 1)) : null);
+  let hi = 0, y = H[0][1], pu = H[0][2];
+  const P = dates.map(d => { while (hi < H.length && H[hi][0] <= d) { y = H[hi][1]; pu = H[hi][2]; hi++; } const fi = fxIdx(d); return {d, y, pu, fi, f: D.fx.series[fi][1]}; });
+  const sdY = (D.yield_dist && D.yield_dist.sd) || 235, rl = P.map(p => real(p.y, inflAt(p.d))), lf = P.map((p, i) => i ? Math.log(p.f / P[i - 1].f) : 0);
   P.forEach((p, i) => {
-    const T = yearsTo(C.tracked.venc, new Date(p.d + "T12:00:00")), Dm = T / (1 + p.y / 100);
-    const w = rl.slice(Math.max(0, i - 249), i + 1), V = w.length >= 60 ? w.filter(x => x <= rl[i]).length / w.length * 100 : null;
-    const be = (Math.pow(1 + p.y / 100, T / (T - 1)) - 1) * 100 - p.y, cush = be * 100;   // 12개월 손익분기 금리 상승(bp, 롤다운 포함 정확 계산)
+    const T = yearsTo(C.tracked.venc, new Date(p.d + "T12:00:00"));
+    const w = rl.slice(Math.max(0, i - 249), i + 1), V = w.length >= 60 ? pctOf(w, rl[i]) : null;
+    const cush = ((Math.pow(1 + p.y / 100, T / (T - 1)) - 1) * 100 - p.y) * 100;   // 12개월 손익분기 금리 상승(bp, 롤다운 포함)
     const vol = i >= 60 ? sdOf(lf.slice(i - 59, i + 1)) * Math.sqrt(252) * 100 : null, ctv = vol ? (p.y - E.kr) / vol : null;
     const Cs = ctv == null ? null : (lin(cush / sdY, 0.8, 1.8) + lin(ctv, 0.3, 1.0)) / 2;
-    const fx20 = i >= 20 ? (p.f / P[i - 20].f - 1) * 100 : null, y10 = i >= 10 ? (p.y - P[i - 10].y) * 100 : null;
-    const vw = v20.slice(Math.max(20, i - 249), i + 1).filter(x => x != null), med = vw.length ? [...vw].sort((a, b) => a - b)[vw.length >> 1] : null, vr = med && v20[i] != null ? v20[i] / med : null;
-    const Ms = fx20 == null || y10 == null || vr == null ? null : 0.5 * lin(fx20, -5, 1) + 0.25 * lin(y10, 40, -10) + 0.25 * lin(vr, 2, 1);
-    Object.assign(p, {real: rl[i], Dm, cush, vol, ctv, fx20, y10, vr, V, C: Cs, M: Ms, sdY});
-    p.S = V == null || Cs == null || Ms == null ? null : 0.35 * V + 0.30 * Cs + 0.35 * Ms;
-    p.st = p.S == null ? null : V >= E.gV && Cs >= E.gC ? (Ms >= E.gM ? 2 : 1) : 0;
+    const X = fxValue(p.fi), fx20 = i >= 20 ? (p.f / P[i - 20].f - 1) * 100 : null;
+    Object.assign(p, {real: rl[i], cush, vol, ctv, X, V, C: Cs, fx20, sdY});
+    p.S = V == null || Cs == null ? null : 0.5 * X + 0.3 * V + 0.2 * Cs;
+    p.st = p.S == null ? null : p.S >= E.hi ? 2 : p.S >= E.lo ? 1 : 0;
   });
   return eoMemo[key] = P;
 }
-const eoProj = (m, mode = "flat") => { const p = eoSeries(m, 60, mode).find(q => q.fut && q.st === 2); return p ? p.d : null; };
 const eoCol = s => s == null ? "transparent" : `hsl(${Math.round(s * 1.2)},62%,44%)`;
 function eoChart(m) {
-  const A = eoSeries(m, 60, "flat"), B = eoSeries(m, 60, "trend"), i0 = A.findIndex(p => p.S != null);
-  if (i0 < 0) return "<p class=note>자료가 부족해 3요인 타임라인을 그릴 수 없습니다.</p>";
-  const P = A.slice(i0), Q = B.slice(i0), n = P.length, W = 720, L = 46, R = 46, x = i => L + i / (n - 1) * (W - L - R), bw = (W - L - R) / (n - 1);
-  const T0 = 22, T1 = 140, ys = P.concat(Q).map(p => p.y), fs = P.concat(Q).map(p => p.f);
+  const A = eoSeries(m), i0 = A.findIndex(p => p.S != null), E = EO();
+  if (i0 < 0) return "<p class=note>자료가 부족해 타임라인을 그릴 수 없습니다.</p>";
+  const P = A.slice(i0), n = P.length, W = 720, L = 54, R = 46, x = i => L + i / (n - 1) * (W - L - R), bw = (W - L - R) / (n - 1);
+  const T0 = 22, T1 = 140, ys = P.map(p => p.y), fs = P.map(p => p.f);
   const yr = [Math.min(...ys) - .15, Math.max(...ys) + .15], fr = [Math.min(...fs) * .985, Math.max(...fs) * 1.015];
   const Yp = v => T1 - (v - yr[0]) / (yr[1] - yr[0]) * (T1 - T0), Fp = v => T1 - (v - fr[0]) / (fr[1] - fr[0]) * (T1 - T0);
-  const S0 = 220, S1 = 306, Sp = v => S1 - v / 100 * (S1 - S0), fut0 = P.findIndex(p => p.fut), now = fut0 > 0 ? fut0 - 1 : n - 1;
-  const pl = (arr, f, a, b) => arr.slice(a, b).map((p, k) => `${x(a + k).toFixed(1)},${f(p).toFixed(1)}`).join(" ");
-  const stC = ["", "rgba(230,160,30,.22)", "rgba(34,160,70,.26)"];
-  let g = fut0 > 0 ? `<rect x="${x(fut0) - bw / 2}" y="${T0 - 14}" width="${W - R - x(fut0) + bw / 2}" height="${S1 - T0 + 14}" fill="var(--soft)"/><text x="${x(fut0) + 4}" y="${T0 - 4}" style="font-size:10px;font-weight:700">전망(가정) →</text>` : "";
+  const S0 = 220, S1 = 306, Sp = v => S1 - v / 100 * (S1 - S0), now = n - 1;
+  const pl = (f) => P.map((p, i) => `${x(i).toFixed(1)},${f(p).toFixed(1)}`).join(" ");
+  const stC = ["", "rgba(230,160,30,.22)", "rgba(34,160,70,.28)"];
+  let g = "";
   P.forEach((p, i) => { if (p.st) g += `<rect x="${(x(i) - bw / 2).toFixed(1)}" y="${T0}" width="${(bw + .6).toFixed(1)}" height="${T1 - T0}" fill="${stC[p.st]}"/>`; });
-  [[0, 1, 2], ["V", "C", "M"]][1].forEach((k, r) => { const yy = 150 + r * 16; g += `<text x="${L - 4}" y="${yy + 10}" text-anchor="end" style="font-size:10px">${["가치", "캐리", "모멘텀"][r]}</text>`; P.forEach((p, i) => { g += `<rect x="${(x(i) - bw / 2).toFixed(1)}" y="${yy}" width="${(bw + .6).toFixed(1)}" height="13" fill="${eoCol(p[k])}"${p.fut ? ' opacity=".55"' : ""}><title>${p.d} ${["가치", "캐리", "모멘텀"][r]} ${f2(p[k], 0)}점</title></rect>`; }); });
-  // 위 패널: PF32 YTM(검정)·BRL/KRW(파랑)
-  g += `<polyline points="${pl(P, p => Yp(p.y), 0, now + 1)}" fill="none" stroke="currentColor" stroke-width="1.6"/><polyline points="${pl(P, p => Fp(p.f), 0, now + 1)}" fill="none" stroke="#2a6fdb" stroke-width="1.4"/>`;
-  if (fut0 > 0) g += `<polyline points="${pl(P, p => Yp(p.y), now, n)}" fill="none" stroke="currentColor" stroke-width="1.2" stroke-dasharray="4 3"/><polyline points="${pl(P, p => Fp(p.f), now, n)}" fill="none" stroke="#2a6fdb" stroke-width="1.2" stroke-dasharray="4 3"/><polyline points="${pl(Q, p => Fp(p.f), now, n)}" fill="none" stroke="#2a6fdb" stroke-width="1.2" stroke-dasharray="1 3"/>`;
+  [["X", "환율가치"], ["V", "금리가치"], ["C", "캐리"]].forEach(([k, lab], r) => { const yy = 150 + r * 16; g += `<text x="${L - 4}" y="${yy + 10}" text-anchor="end" style="font-size:10px">${lab}</text>`; P.forEach((p, i) => { g += `<rect x="${(x(i) - bw / 2).toFixed(1)}" y="${yy}" width="${(bw + .6).toFixed(1)}" height="13" fill="${eoCol(p[k])}"><title>${p.d} ${lab} ${f2(p[k], 0)}점</title></rect>`; }); });
+  g += `<polyline points="${pl(p => Yp(p.y))}" fill="none" stroke="currentColor" stroke-width="1.6"/><polyline points="${pl(p => Fp(p.f))}" fill="none" stroke="#2a6fdb" stroke-width="1.4"/>`;
   [yr[0] + .15, (yr[0] + yr[1]) / 2, yr[1] - .15].forEach(v => g += `<text x="${L - 4}" y="${Yp(v) + 3}" text-anchor="end" style="font-size:9px">${f2(v, 1)}%</text>`);
   [fr[0] / .985, (fr[0] + fr[1]) / 2, fr[1] / 1.015].forEach(v => g += `<text x="${W - R + 4}" y="${Fp(v) + 3}" style="font-size:9px;fill:#2a6fdb">${f2(v, 0)}</text>`);
-  // 아래 패널: 종합 점수(실선 = 실제, 파선 = 보합 가정, 점선 = 최근 추세 지속 가정)
-  [0, 50, 100].forEach(v => g += `<line x1="${L}" x2="${W - R}" y1="${Sp(v)}" y2="${Sp(v)}" stroke="var(--line)"/><text x="${L - 4}" y="${Sp(v) + 3}" text-anchor="end" style="font-size:9px">${v}</text>`);
-  g += `<text x="${L}" y="${S0 - 4}" style="font-size:10px;font-weight:700">종합 점수 (가치 35 · 캐리 30 · 모멘텀 35)</text>`;
-  g += `<polyline points="${pl(P, p => Sp(p.S), 0, now + 1)}" fill="none" stroke="currentColor" stroke-width="1.8"/>`;
-  if (fut0 > 0) g += `<polyline points="${pl(P, p => Sp(p.S), now, n)}" fill="none" stroke="currentColor" stroke-width="1.4" stroke-dasharray="4 3"/><polyline points="${pl(Q, p => Sp(p.S), now, n)}" fill="none" stroke="var(--bad)" stroke-width="1.4" stroke-dasharray="1 3"/>`;
-  // 일정 표시(공개 calendar.json + 결선 기준일)
-  const ev = [{date: ENTRY_BASE_DATE, title: "결선"}].concat((D.cal && D.cal.events || []).filter(e => e.date && !e.weekly && e.id !== "br-runoff")), idx = d => P.findIndex(p => p.d >= d);
-  let lane = 0; ev.filter(e => e.date >= P[0].d && e.date <= P.at(-1).d).sort((a, b) => a.date < b.date ? -1 : 1).forEach(e => { const i = idx(e.date); if (i < 0) return; const xx = x(i), tt = e.title.replace(/\(.*?\)/g, "").replace("브라질 ", "").slice(0, 10);
-    g += `<line x1="${xx}" x2="${xx}" y1="${T0}" y2="${S1}" stroke="currentColor" stroke-width="${e.title === "결선" ? 1.4 : .7}" stroke-dasharray="${e.title === "결선" ? "" : "2 2"}" opacity=".7"/>${e.title === "결선" || i > now ? `<text x="${xx + 2}" y="${T0 + 9 + (lane++ % 3) * 10}" style="font-size:9px">${tt}${e.confirmed === false ? "?" : ""}</text>` : ""}`; });
-  g += `<line x1="${x(now)}" x2="${x(now)}" y1="${T0 - 14}" y2="${S1 + 4}" stroke="currentColor" stroke-width="2"/><text x="${x(now) - 3}" y="${S1 + 14}" text-anchor="end" style="font-size:10px;font-weight:700">오늘 ${P[now].d.slice(5)}</text>`;
-  const pj = P.findIndex(p => p.fut && p.st === 2);
-  if (pj > 0) g += `<circle cx="${x(pj)}" cy="${Sp(P[pj].S)}" r="5" fill="var(--ok)"/><text x="${x(pj) + 7}" y="${Sp(P[pj].S) - 6}" style="font-size:10px;font-weight:700;fill:var(--ok)">보합 시 충족 ${P[pj].d.slice(5)}</text>`;
-  let lm = ""; P.forEach((p, i) => { const mo = p.d.slice(0, 7); if (mo !== lm && i > 0 && i < n - 8 && Math.abs(i - now) > 8) g += `<text x="${x(i)}" y="${S1 + 14}" text-anchor="middle" style="font-size:9px">${+p.d.slice(5, 7)}월</text>`; lm = mo; });
+  [0, E.lo, E.hi, 100].forEach(v => g += `<line x1="${L}" x2="${W - R}" y1="${Sp(v)}" y2="${Sp(v)}" stroke="var(--line)" ${v === E.lo || v === E.hi ? 'stroke-dasharray="3 3"' : ""}/><text x="${L - 4}" y="${Sp(v) + 3}" text-anchor="end" style="font-size:9px">${v}</text>`);
+  g += `<text x="${L}" y="${S0 - 6}" style="font-size:10px;font-weight:700">진입 점수 (환율 가치 50 · 금리 가치 30 · 캐리 20) — 높을수록 좋은 진입</text>`;
+  g += `<polyline points="${pl(p => Sp(p.S))}" fill="none" stroke="currentColor" stroke-width="1.8"/>`;
+  const ev = [{date: ENTRY_BASE_DATE, title: "결선"}].concat((D.cal && D.cal.events || []).filter(e => e.date && !e.weekly && e.id !== "br-runoff" && e.fiscal)), idx = d => P.findIndex(p => p.d >= d);
+  ev.filter(e => e.date >= P[0].d && e.date <= P.at(-1).d).forEach(e => { const i = idx(e.date); if (i < 0) return; const xx = x(i);
+    g += `<line x1="${xx}" x2="${xx}" y1="${T0}" y2="${S1}" stroke="currentColor" stroke-width="${e.title === "결선" ? 1.4 : .7}" stroke-dasharray="${e.title === "결선" ? "" : "2 2"}" opacity=".7"/>${e.title === "결선" ? `<text x="${xx - 3}" y="${T0 + 9}" text-anchor="end" style="font-size:9px;font-weight:700">결선</text>` : ""}`; });
+  // 최고점·최저점 표시
+  const valid = P.map((p, i) => [p.S, i]).filter(q => q[0] != null), top = valid.reduce((a, q) => q[0] > a[0] ? q : a), bot = valid.reduce((a, q) => q[0] < a[0] ? q : a);
+  [[top, "최고", "var(--ok)"], [bot, "최저", "var(--bad)"]].forEach(([[v, i], lab, c]) => g += `<circle cx="${x(i)}" cy="${Sp(v)}" r="4.5" fill="${c}"/><text x="${x(i) + (i > n * .8 ? -6 : 6)}" y="${Sp(v) + (lab === "최고" ? -6 : 13)}" text-anchor="${i > n * .8 ? "end" : "start"}" style="font-size:10px;font-weight:700;fill:${c}">${lab} ${f2(v, 0)}점 ${P[i].d.slice(5).replace("-", "/")}</text>`);
+  let lm = ""; P.forEach((p, i) => { const mo = p.d.slice(0, 7); if (mo !== lm && i > 0 && i < n - 10) g += `<text x="${x(i)}" y="${S1 + 14}" text-anchor="middle" style="font-size:9px">${+p.d.slice(5, 7)}월</text>`; lm = mo; });
+  g += `<text x="${x(now)}" y="${S1 + 14}" text-anchor="end" style="font-size:10px;font-weight:700">오늘 ${P[now].d.slice(5).replace("-", "/")}</text>`;
   return `<svg viewBox="0 0 ${W} ${S1 + 20}" width="100%" style="color:var(--ink);font-family:inherit;display:block">${g}</svg>
-    <div class=note>위 패널: <b>검정 = PF32 YTM</b>(왼쪽 축) · <b style="color:#2a6fdb">파랑 = BRL/KRW</b>(오른쪽 축) · 배경 <span style="background:rgba(34,160,70,.26);padding:0 5px">초록 = 최적 진입 구간(3요인 충족)</span> <span style="background:rgba(230,160,30,.22);padding:0 5px">주황 = 싸지만 모멘텀 대기</span>. 가운데 띠 = 요인별 점수(빨강 0 → 초록 100, 칸에 마우스를 올리면 값). 아래 = 종합 점수 — 실선 실제, <b>파선 = 오늘 금리·환율이 그대로일 때(보합 가정)</b>, <span style="color:var(--bad)"><b>빨간 점선 = 최근 20영업일 추세가 이어질 때</b></span>. 세로선은 공개 일정(?는 날짜 미확정). 전망 구간은 예측이 아니라 '이대로라면 언제 조건이 맞는가'를 보는 가정입니다.</div>`;
+    <div class=note>위 패널: <b>검정 = PF32 YTM</b>(왼쪽 축) · <b style="color:#2a6fdb">파랑 = BRL/KRW</b>(오른쪽 축) · 배경 <span style="background:rgba(34,160,70,.28);padding:0 5px">초록 = 최적(${E.hi}점 이상)</span> <span style="background:rgba(230,160,30,.22);padding:0 5px">주황 = 보통(${E.lo}~${E.hi})</span> · 흰색 = 불리. 가운데 띠 = 요인별 점수(빨강 0 → 초록 100, 칸에 마우스를 올리면 값). 아래 = 진입 점수와 기간 중 최고·최저점. 세로선 = 결선·브라질 재정 일정.</div>`;
+}
+// 검증: ① 과거 10년 BRL/KRW 로 환율 가치(점수 구간)별 12개월 뒤 환율 변화 ② 올해 PF32 진입 점수 구간별 지금까지의 실제 원화 손익
+function eoBack(m) {
+  const S = D.fx.series, out = [];
+  for (let i = 1260; i + 252 < S.length; i += 1) out.push({X: fxValue(i), m20: (S[i][1] / S[i - 20][1] - 1) * 100, fw: (S[i + 252][1] / S[i][1] - 1) * 100});
+  if (out.length < 100) return "";
+  const P = eoSeries(m), cur = P.at(-1), T = yearsTo(C.tracked.venc), y0 = m.ytm;
+  const beFx = (1 / ((Math.pow(1 + y0 / 100, T) / Math.pow(1 + y0 / 100, T - 1)) * EO_COST()) - 1) * 100;   // 금리 보합 시 12개월 손익분기 헤알 변화(4번 환전 비용 포함)
+  const bk = (arr, f, cuts) => cuts.slice(0, -1).map((a, k) => { const b = arr.filter(o => f(o) >= a && f(o) < cuts[k + 1]); return {a, b: cuts[k + 1], n: b.length, mu: b.length ? b.reduce((s, o) => s + o.fw, 0) / b.length : null, loss: b.length ? b.filter(o => o.fw < beFx).length / b.length * 100 : null}; });
+  const xb = bk(out, o => o.X, [0, 20, 40, 60, 80, 100.01]), mb = bk(out, o => o.m20, [-99, -5, -2, 0, 2, 99]);
+  const now = P.filter(p => p.S != null), nowV = (P.at(-1).pu) * P.at(-1).f, ret = p => (nowV / (p.pu * p.f) - 1) * 100;
+  const hist = now.filter(p => p.d < P.at(-1).d), sb = [[E => E.hi, 101, "최적"], [E => E.lo, E => E.hi, "보통"], [() => 0, E => E.lo, "불리"]].map(([lo, hi, lab]) => { const E = EO(), l = lo(E), h = typeof hi === "number" ? hi : hi(E), b = hist.filter(p => p.S >= l && p.S < h); return {lab, n: b.length, mu: b.length ? b.reduce((s, p) => s + ret(p), 0) / b.length : null}; });
+  const rk = (a, b) => { const r = v => { const o = v.map((x, i) => [x, i]).sort((p, q) => p[0] - q[0]), R = []; o.forEach(([, i], k) => R[i] = k); return R; }, ra = r(a), rb = r(b), n = a.length; return 1 - 6 * ra.reduce((s, x, i) => s + (x - rb[i]) ** 2, 0) / (n * (n * n - 1)); };
+  const cX = rk(out.map(o => o.X), out.map(o => o.fw)), cM = rk(out.map(o => o.m20), out.map(o => o.fw));
+  // 재검증: 3년 창만 쓰면 2019-11 시작부터 검증 가능(코로나·재정 위기 포함) — 위기 구간에서 '싼 헤알'이 더 싸진 사례를 함께 보여 준다
+  const o3 = []; for (let i = 756; i + 252 < S.length; i++) { const w = S.slice(i - 755, i + 1).map(r => r[1]); o3.push({d: S[i][0], X: 100 - pctOf(w, S[i][1]), fw: (S[i + 252][1] / S[i][1] - 1) * 100}); }
+  const c3 = rk(o3.map(o => o.X), o3.map(o => o.fw)), h3 = o3.filter(o => o.X >= 80), w3 = h3.reduce((a, o) => o.fw < a.fw ? o : a, h3[0] || {fw: null, d: ""}), crisis = h3.filter(o => o.d < "2021-06"), calm = h3.filter(o => o.d >= "2021-06"), avg = a => a.length ? a.reduce((s2, o) => s2 + o.fw, 0) / a.length : null;
+  const curB = xb.findIndex(o => cur.X >= o.a && cur.X < o.b);
+  return `<h3 style="margin:14px 0 4px;font-size:14px">점수 검증 — 높은 점수가 실제로 좋은 진입이었나</h3>
+    <div class=tbl><table class=mono><thead><tr><th>환율 가치 점수<br><small>BRL/KRW 3·5년 백분위 반전</small></th><th class=r>표본</th><th class=r>12개월 뒤 BRL/KRW<br><small>평균 변화</small></th><th class=r>손익분기(${pct(beFx, 1)}) 밑으로<br><small>떨어진 비율</small></th></tr></thead><tbody>
+    ${xb.map((o, k) => `<tr class="${k === curB ? "hl-now" : ""}"><td>${o.a}~${Math.min(100, Math.round(o.b))}${k === curB ? `<span class=nowtag>현재 ${f2(cur.X, 0)}</span>` : ""}</td><td class=r>${o.n}</td><td class="r ${o.mu < 0 ? "neg" : ""}">${pct(o.mu, 1)}</td><td class=r>${o.loss == null ? "—" : f2(o.loss, 0) + "%"}</td></tr>`).join("")}
+    <tr style="border-top:2px solid var(--ink)"><td colspan=4><small>참고 — 단기 모멘텀(BRL/KRW 20영업일 변화)별 12개월 뒤 평균: ${mb.map(o => `${o.a <= -99 ? "−5% 미만" : o.b >= 99 ? "+2% 이상" : `${o.a}~${o.b}%`} <b>${pct(o.mu, 1)}</b>(${o.n})`).join(" · ")}</small></td></tr></tbody></table></div>
+    <div class=tbl style="margin-top:6px"><table class=mono><thead><tr><th>올해 진입 점수 구간</th><th class=r>해당 날짜 수</th><th class=r>그날 1억원 진입 → 지금 원화 손익<br><small>매도 PU·현재 환율 평가</small></th></tr></thead><tbody>
+    ${sb.map(o => `<tr><td>${o.lab}</td><td class=r>${o.n}</td><td class="r ${o.mu < 0 ? "neg" : ""}">${o.mu == null ? "—" : `${pct(o.mu, 1)} (${f2(o.mu * 100, 0)}만원)`}</td></tr>`).join("")}</tbody></table></div>
+    <div class="callout bad" style="margin-top:6px"><b>⚠ 재검증 — 위기 구간에서는 실패했습니다</b><br>위 표(3·5년 창)는 5년 자료가 필요해 2021-11 이후 시작만 검증됩니다. 3년 창만 쓰면 ${o3[0].d.slice(0, 7)}부터(코로나·브라질 재정 위기 포함) 검증되는데, 이때 상관은 <b>${f2(c3, 2)}</b>로 크게 약해집니다. '싼 헤알'(3년 창 80점 이상)에 진입한 경우 12개월 뒤 BRL/KRW: <b>2019-11~2021-05 시작 평균 ${pct(avg(crisis), 1)}</b>(${crisis.length}일) vs 2021-06 이후 평균 ${pct(avg(calm), 1)}(${calm.length}일), 최악 <b>${pct(w3.fw, 1)}</b>(${w3.d} 진입). 즉 <b>점수가 높다는 것은 '과거 기준으로 싸다'는 뜻일 뿐</b>이고, 재정 위기·글로벌 충격 같은 체제 변화(04-1 시나리오 D) 때는 싼 헤알이 1년 더 20~30% 싸졌습니다. 점수는 진입 순서의 참고로만 쓰고, 금액은 02 탭 극단 손실 한도로 정하세요.</div>
+    <div class=note>순위상관(12개월 뒤 BRL/KRW 변화와, 2021-11~ 시작): <b>환율 가치 ${f2(cX, 2)}</b> · 단기 모멘텀 ${f2(cM, 2)} — 2017~2025 전체로 넓혀도 단기 모멘텀 상관은 약 0.0이라 점수에서 뺐습니다. 단 20영업일 −5% 넘는 급락 직후 진입의 12개월 뒤 평균은 2021-06 이후 +11%였지만 2017~2021-05에는 −4~−5%로 <b>기간마다 엇갈립니다</b>(급락 직후 몰아서 사는 근거도 되지 못함). 표본은 ${S[1260][0].slice(0, 7)}~${S[S.length - 253][0].slice(0, 7)} 시작의 매 영업일이고 12개월 구간이 겹쳐 <b>독립 표본은 약 4개</b>뿐입니다(위기 구간이 빠져 결과가 좋게 나옴 — 위 경고 참고). 올해 표는 진입 시기마다 보유 기간이 달라(최근일수록 짧음) 참고용입니다. 환율 변화만 본 것이며 금리 변동·이자는 손익분기(금리 보합 시 헤알 ${pct(beFx, 1)}까지 버팀)로 반영했습니다.</div>`;
+}
+// 환전 경로 분해: 원→달러→헤알→달러→원이면 BRL/KRW = BRL/USD × USD/KRW — 손익을 '헤알/달러(브라질)'와 '달러/원(한·미)' 두 다리로 나눈다
+function eoLegs(m) {
+  const U = D.fx_usd && D.fx_usd.series; if (!U || U.length < 60) return "";
+  const at = (S, d) => { let v = null; for (const r of S) { if (r[0] <= d) v = r[1]; else break; } return v; }, K = D.fx.series, last = U.at(-1)[0];
+  const pt = d => { const b = at(U, d), k = at(K, d); return b && k ? {b, k, u: k / b} : null; };
+  const yAgo = new Date(Date.parse(last) - 365 * 864e5).toISOString().slice(0, 10), E = EO(), cost = (1 - EO_COST()) * 100;
+  const per = [["1년 전 → 오늘", yAgo, last], ["6/15 → 결선 전(10/23)", "2026-06-15", "2026-10-23"], ["결선 전 → 오늘", "2026-10-23", last], ["6/15 → 오늘", "2026-06-15", last]].filter(([, a]) => a >= U[0][0]);
+  const rowH = per.map(([lab, a, b]) => { const A = pt(a), B = pt(b); if (!A || !B) return ""; const t = (B.k / A.k - 1) * 100, br = (B.b / A.b - 1) * 100, us = (B.u / A.u - 1) * 100, lb = Math.abs(Math.log(B.b / A.b)), lu = Math.abs(Math.log(B.u / A.u)), sh = lb + lu > 0 ? lb / (lb + lu) * 100 : 0;
+    return `<tr><td>${lab}</td><td class="r ${t < 0 ? "neg" : ""}">${pct(t, 1)}</td><td class="r ${br < 0 ? "neg" : ""}">${pct(br, 1)}</td><td class="r ${us < 0 ? "neg" : ""}">${pct(us, 1)}</td><td class=r>${f2(sh, 0)}% / ${f2(100 - sh, 0)}%</td></tr>`; }).join("");
+  const now = pt(last), us = U.map(r => { const k = at(K, r[0]); return k ? k / r[1] : null; }).filter(Boolean), pu = pctOf(us, now.u), pb = pctOf(U.map(r => r[1]), now.b);
+  return `<h3 style="margin:14px 0 4px;font-size:14px">환전 경로 분해 — 원 → 달러 → 헤알 → 달러 → 원</h3>
+    <div class=tbl><table class=mono><thead><tr><th>기간</th><th class=r>BRL/KRW<br><small>원화 기준 헤알</small></th><th class=r>헤알/달러<br><small>브라질 다리</small></th><th class=r>달러/원(USD/KRW)<br><small>한·미 다리</small></th><th class=r>변동 비중<br><small>헤알 / 달러원</small></th></tr></thead><tbody>${rowH}</tbody></table></div>
+    <div class=note>BRL/KRW = 헤알/달러 × 달러/원이라 두 번 환전해도 <b>환율 위험 자체는 BRL/KRW와 같습니다</b>(중간에 달러를 들고 있지 않을 때). 다만 손실의 <b>원인이 둘</b>입니다: 브라질 위험(헤알/달러)과 <b>원화 강세(달러/원 하락)</b>. 예: 6/15 → 결선 전 BRL/KRW 하락은 거의 전부 원화 강세였고, 결선 후에는 헤알 약세였습니다. 현재 달러/원 ${f2(now.u, 0)}원은 자료 기간(${U[0][0].slice(0, 7)}~, 약 ${f2(U.length / 252, 1)}년) 중 ${f2(pu, 0)}백분위, 헤알/달러는 ${f2(pb, 0)}백분위입니다(기간이 짧아 참고만). 달러/원이 높을 때 들어가면 나올 때 원화 강세 위험이 더 큽니다 — 04-2 '원화 강세형' 가정이 이 위험입니다.<br><b>환전 비용</b>: 들어갈 때 원→달러(${f2(E.c1, 2)}%)·달러→헤알(${f2(E.c2, 2)}%), 나올 때 반대로 두 번 = 4번, 왕복 약 <b>${f2(cost, 2)}%</b>(1억원이면 약 ${f2(cost * 100, 0)}만원). 위 손익 지도·시나리오 표·손익분기·검증 표에 반영했습니다(만기까지 보유하면 연 약 ${f2(cost / yearsTo(C.tracked.venc), 2)}%p). 편도 비용은 <b>가정</b>이며 증권사가 제시하는 적용 환율과 기준 환율의 차이로 확인하세요(아래 기준 수정에서 변경). 결제일 사이에 달러로 머무는 며칠의 달러/원 변동은 반영하지 않았습니다. <b>브라질 IOF(환전세)는 0%</b>로 두었습니다 — 근거는 Decreto 6.306/2007 art. 15-B <b>XVI</b>(외국인의 금융·자본시장 투자 목적 자금 유입 환전: zero)·<b>XVII</b>(그 자금의 회수 환전: zero)이며 둘 다 2014년(Decreto 8.325) 조항입니다. 2025년 IOF 개편(Decreto 12.466 → 12.499로 대체: 해외 송금·현금·단기 해외 차입 등 3.5%, 잔여 유입 0.38%)은 이 두 조항을 고치지 않았습니다(Planalto 통합본 기준, 11/24 확인). 2013년 폐지된 채권 투자 6% 세율(토빈세)도 부활하지 않았습니다. Planalto 통합본은 2025년 개편 조항에 의회 정지(Decreto Legislativo 176/2025)·대법원 ADC 96 관련 표시가 엇갈리지만, XVI·XVII은 그와 무관하게 0%입니다. 단 IOF는 의회 입법 없이 대통령령으로 바뀔 수 있어 매수 시점에 증권사 안내로 재확인하세요.</div>`;
 }
 function eoGrid(m, r) {
   const T = yearsTo(C.tracked.venc), y0 = m.ytm, kr = INF().kr, sr = SR(), E = EO();
-  const ret = (dy, fx) => ((Math.pow(1 + y0 / 100, T) / Math.pow(1 + (y0 + dy / 100) / 100, T - 1)) * (1 + fx / 100) - 1) * 100;   // 12개월 후 매도: 제로쿠폰 정확 재평가(롤다운·볼록성 포함) × 환율
+  const ret = (dy, fx) => ((Math.pow(1 + y0 / 100, T) / Math.pow(1 + (y0 + dy / 100) / 100, T - 1)) * (1 + fx / 100) * EO_COST() - 1) * 100;   // 12개월 후 매도: 제로쿠폰 정확 재평가(롤다운·볼록성 포함) × 환율 × 4번 환전 후 남는 비율
   const DY = Array.from({length: 15}, (_, i) => -250 + 50 * i), FXv = Array.from({length: 15}, (_, i) => -25 + 2.5 * i);
   const L = 58, T0 = 26, cw = 42, ch = 19, W = L + cw * FXv.length + 8, H = T0 + ch * DY.length + 34;
   const val = DY.map(d => FXv.map(f => real(ret(d, f), kr)));
@@ -1283,11 +1313,11 @@ function eoGrid(m, r) {
   const ef = r.rows.reduce((a, s) => a + s.w * (+s.fx2 || 0), 0), ed = r.rows.reduce((a, s) => a + s.w * (+s.dy2 || 0), 0), S = STRESS();
   g += `<path d="M${px(ef)} ${py(ed) - 7}l7 7-7 7-7-7z" fill="currentColor"/><text x="${px(ef) + 9}" y="${py(ed) + 4}" style="font-size:10px;font-weight:700">EV</text>`;
   g += `<text x="${px(S.fx)}" y="${py(S.dy) + 5}" text-anchor="middle" style="font-size:15px;font-weight:900;fill:var(--bad)">✕</text><text x="${px(S.fx) + 8}" y="${py(S.dy) + 15}" style="font-size:9px;fill:var(--bad)">극단(02)</text>`;
-  g += `<text x="${L}" y="${H - 6}" style="font-size:9px">칸 = 12개월 원화 실질 %(한국 물가 ${f2(kr, 1)}% 차감) · 원 = 시나리오(크기 ∝ 확률) · ◆ = 확률가중 평균 경로 · 굵은 선 = 손익 0 · 파선 = 손절 기준 ${f2(sr, 1)}%</text>`;
+  g += `<text x="${L}" y="${H - 6}" style="font-size:9px">칸 = 12개월 원화 실질 %(한국 물가 ${f2(kr, 1)}% 차감, 4번 환전 비용 ${f2((1 - EO_COST()) * 100, 1)}% 포함) · 원 = 시나리오(크기 ∝ 확률) · ◆ = 확률가중 평균 경로 · 굵은 선 = 손익 0 · 파선 = 손절 기준 ${f2(sr, 1)}%</text>`;
   // 시나리오 통계(정확 재평가)
   const rs = r.rows.map(s => ({s, k: ret(+s.dy2 || 0, +s.fx2 || 0)})), EV = rs.reduce((a, o) => a + o.s.w * o.k, 0), sd = Math.sqrt(rs.reduce((a, o) => a + o.s.w * (o.k - EV) ** 2, 0));
   const pL = rs.reduce((a, o) => a + (o.k < 0 ? o.s.w : 0), 0) * 100, up = rs.reduce((a, o) => a + o.s.w * Math.max(0, o.k), 0), dn = rs.reduce((a, o) => a + o.s.w * Math.max(0, -o.k), 0);
-  const yBE = ((Math.pow(1 + y0 / 100, T / (T - 1)) - 1) * 100 - y0) * 100, fBE = (1 / (1 + ret(0, 0) / 100) - 1) * 100, fBEr = ((1 + kr / 100) / (1 + ret(0, 0) / 100) - 1) * 100;
+  const yBE = ((Math.pow(EO_COST() * Math.pow(1 + y0 / 100, T), 1 / (T - 1)) - 1) * 100 - y0) * 100, fBE = (1 / (1 + ret(0, 0) / 100) - 1) * 100, fBEr = ((1 + kr / 100) / (1 + ret(0, 0) / 100) - 1) * 100;
   const stats = `<div class=tbl style="margin-top:8px"><table class=mono><thead><tr><th>시나리오</th><th class=r>확률</th><th class=r>진입 후 금리</th><th class=r>헤알</th><th class=r>12개월 원화 ${RT.kn}</th><th class=r>원화 실질 ${RT.kr}</th></tr></thead><tbody>
     ${rs.map(o => `<tr><td style="white-space:normal">${o.s.name.split(":")[0]}</td><td class=r>${f2(o.s.w * 100, 0)}%</td><td class=r>${o.s.dy2 > 0 ? "+" : ""}${o.s.dy2}bp</td><td class=r>${pct(+o.s.fx2, 0)}</td><td class="r ${o.k < 0 ? "neg" : ""}">${pct(o.k, 1)}</td><td class="r ${real(o.k, kr) < 0 ? "neg" : ""}">${pct(real(o.k, kr), 1)}</td></tr>`).join("")}
     <tr style="border-top:2px solid var(--ink);font-weight:700"><td>확률가중 EV</td><td></td><td></td><td></td><td class=r>${pct(EV, 1)}</td><td class=r>${pct(real(EV, kr), 1)}</td></tr></tbody></table></div>
@@ -1295,35 +1325,37 @@ function eoGrid(m, r) {
   return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="color:var(--ink);font-family:inherit;display:block;max-width:${W}px">${g}</svg>${stats}`;
 }
 function eoSection(m) {
-  const P = eoSeries(m, 0), p = P.at(-1), E = EO(), r = polCalc(m), sc = id => `document.getElementById('${id}').scrollIntoView({behavior:'smooth',block:'start'})`;
+  const P = eoSeries(m), p = P.at(-1), E = EO(), r = polCalc(m), sc = id => `document.getElementById('${id}').scrollIntoView({behavior:'smooth',block:'start'})`;
   if (!p || p.S == null) return `<section id=s040><h2>04-0 진입 최적화</h2><div class=body><p class=note>자료가 부족합니다.</p></div></section>`;
-  const pf = eoProj(m, "flat"), pt = eoProj(m, "trend"), cls = ["bad", "", "go"][p.st];
-  const restM = 0.25 * lin(p.y10, 40, -10) + 0.25 * lin(p.vr, 2, 1), needFx = -5 + 6 * Math.max(0, Math.min(100, (E.gM - restM) / 0.5)) / 100;
+  const cls = ["bad", "", "go"][p.st], hist = P.filter(q => q.S != null), rank = hist.filter(q => q.S <= p.S).length / hist.length * 100;
   const td = new Date(Date.now() + 9 * 36e5).toISOString().slice(0, 10), up = (D.cal && D.cal.events || []).filter(e => (e.date && e.date >= td) || (!e.date && e.window && e.window >= td.slice(0, 7))).sort((a, b) => (a.date || a.window + "-99") < (b.date || b.window + "-99") ? -1 : 1).slice(0, 5);
-  const bar = (v, gte) => `<div style="position:relative;height:12px;background:var(--soft);min-width:120px"><div style="width:${v}%;height:100%;background:${eoCol(v)}"></div><div style="position:absolute;left:${gte}%;top:-3px;bottom:-3px;border-left:2px solid var(--ink)"></div></div>`;
+  const bar = v => `<div style="position:relative;height:12px;background:var(--soft);min-width:120px"><div style="width:${v}%;height:100%;background:${eoCol(v)}"></div></div>`;
   const rows = [
-    ["가치", p.V, E.gV, `${RT.r} 실질 YTM ${f2(p.real, 2)}% — 최근 1년 중 ${f2(p.V, 0)}백분위(높을수록 쌈)`],
-    ["캐리", p.C, E.gC, `12개월 손익분기 금리 상승 +${f2(p.cush, 0)}bp = 과거 12개월 금리 변동 σ ${p.sdY}bp의 ${f2(p.cush / p.sdY, 2)}배 · 캐리 ÷ 환율 변동성 = (${f2(p.y, 2)} − 한국 ${f2(E.kr, 1)})% ÷ ${f2(p.vol, 1)}% = <b>${f2(p.ctv, 2)}</b>`],
-    ["모멘텀", p.M, E.gM, `헤알(BRL/KRW) 20영업일 ${pct(p.fx20, 1)} · PF32 금리 10영업일 ${p.y10 >= 0 ? "+" : ""}${f2(p.y10, 0)}bp · 금리 변동성 ${f2(p.vr, 2)}배(최근 20일 ÷ 1년 중앙값)${p.M < E.gM ? ` — <b>충족하려면 헤알 20영업일 변화 ≥ ${pct(needFx, 1)}</b>(다른 항목 유지 시)` : ""}`]];
-  const why = p.st === 2 ? "싸고(가치), 기다리는 비용을 캐리가 충분히 덮고, 환율·금리 하락 압력이 멈췄습니다. 1차 소액 진입을 검토할 구간입니다(02 탭 사다리·손절 정합 함께 확인)."
-    : p.st === 1 ? `가격은 싸고 캐리도 충분하지만 <b>헤알이 계속 떨어지는 중</b>이라 '떨어지는 칼'입니다. ${pf ? `금리·환율이 오늘 수준에서 멈추면 <b>${pf.slice(5).replace("-", "/")}께</b> 조건이 충족됩니다` : "보합이 이어져도 60영업일 안에는 충족되지 않습니다"}${pt ? `(최근 추세가 이어져도 ${pt.slice(5).replace("-", "/")})` : " — 최근 20영업일 추세가 이어지면 60영업일 안에 충족되지 않습니다"}.`
-    : "가치나 캐리가 문턱에 못 미칩니다. 가격이 더 싸지거나(금리 상승) 환율 변동성이 줄어야 합니다.";
-  return `<section id=s040><h2>04-0 진입 최적화 — 가치·캐리·모멘텀 3요인 (채권 운용사 방식)</h2><div class=body>
-    <div class="subnav noprint"><button onclick="${sc("s040")}">04-0 진입 최적화</button><button onclick="${sc("s040map")}">손익 지도</button><button onclick="${sc("s041")}">04-1 시나리오</button><button onclick="${sc("s042")}">04-2 환율 가정</button></div>
-    <div class="callout ${cls}"><b>🎯 지금 판정</b> — <b style="font-size:16px">${EO_LAB[p.st]}</b> <span class=mono>(종합 ${f2(p.S, 0)}점 · ${p.d} 기준)</span><br><small>${why}</small>
-      <table class=mono style="width:100%;margin-top:6px"><tbody>${rows.map(([n, v, gte, t]) => `<tr><td style="width:56px"><b>${n}</b></td><td style="width:34px" class=r>${f2(v, 0)}</td><td style="width:34%">${bar(v, gte)}</td><td style="white-space:normal">${v >= gte ? "✔" : "✖"} ${t}</td></tr>`).join("")}</tbody></table>
-      <small>검은 눈금 = 문턱(가치 ${E.gV} · 캐리 ${E.gC} · 모멘텀 ${E.gM}). ${up.length ? `다음 확인 신호: ${up.map(e => `${e.date ? e.date.slice(5).replace("-", "/") : e.window + "(미정)"} ${e.title}`).join(" · ")}` : ""}</small></div>
-    <h3 style="margin:14px 0 4px;font-size:14px">진입 신호 타임라인 — 언제 조건이 맞았고, 이대로라면 언제 맞는가</h3>
+    ["환율 가치", "50%", p.X, `BRL/KRW ${f2(p.f, 2)} — 최근 3·5년 중 하위 ${f2(100 - p.X, 0)}백분위(쌀수록 높은 점수)`],
+    ["금리 가치", "30%", p.V, `${RT.r} 실질 YTM ${f2(p.real, 2)}% — 최근 1년 중 ${f2(p.V, 0)}백분위(높을수록 쌈)`],
+    ["캐리", "20%", p.C, `12개월 손익분기 금리 상승 +${f2(p.cush, 0)}bp(과거 σ ${p.sdY}bp의 ${f2(p.cush / p.sdY, 2)}배) · 캐리 ÷ 환율 변동성 (${f2(p.y, 2)} − 한국 ${f2(E.kr, 1)})% ÷ ${f2(p.vol, 1)}% = ${f2(p.ctv, 2)}`]];
+  const why = p.st === 2 ? `헤알이 과거 대비 싸고 금리·캐리도 높아 <b>점수상 좋은 진입 구간</b>입니다. 다만 점수는 '싸다'는 뜻이지 바닥이라는 뜻이 아닙니다 — 04-1 시나리오 D(재정 지배)처럼 체제가 바뀌면 더 싸질 수 있으니 분할로 들어가고 02 탭 손절 정합·극단 손실 한도를 함께 확인하세요.`
+    : p.st === 1 ? "점수가 중간입니다. 헤알 또는 금리 중 한쪽이 충분히 싸지 않습니다." : "헤알이 과거 대비 비싸거나 금리 매력이 낮습니다. 올해 5~6월처럼 이 구간 진입은 사후 성과가 가장 나빴습니다.";
+  return `<section id=s040><h2>04-0 진입 최적화 — 진입 점수 (높을수록 좋은 진입)</h2><div class=body>
+    <div class="subnav noprint"><button onclick="${sc("s040")}">04-0 진입 점수</button><button onclick="${sc("s040map")}">손익 지도</button><button onclick="${sc("s041")}">04-1 시나리오</button><button onclick="${sc("s042")}">04-2 환율 가정</button></div>
+    <div class="callout ${cls}"><b>🎯 지금 진입 점수</b> — <b style="font-size:18px" class=mono>${f2(p.S, 0)}점</b> <b>${EO_LAB[p.st]}</b> <span class=mono>(${p.d} 기준 · 지난 약 1년 중 상위 ${f2(100 - rank + 100 / hist.length, 0)}%)</span><br><small>${why}</small>
+      <table class=mono style="width:100%;margin-top:6px"><tbody>${rows.map(([n, w, v, t]) => `<tr><td style="width:66px"><b>${n}</b><br><small>${w}</small></td><td style="width:34px" class=r>${f2(v, 0)}</td><td style="width:30%">${bar(v)}</td><td style="white-space:normal">${t}</td></tr>`).join("")}
+      <tr><td><b>참고</b><br><small>점수 제외</small></td><td></td><td></td><td style="white-space:normal">단기 모멘텀: 헤알 20영업일 ${pct(p.fx20, 1)} — 2017~2025 검증에서 12개월 뒤 결과를 예측하지 못해(상관 약 0.0) 점수에 넣지 않았습니다. 급락 중이면 변동이 크니 한 번에 사지 말고 나눠 사는 데만 참고하세요.</td></tr></tbody></table>
+      <small>${up.length ? `다음 확인 신호: ${up.map(e => `${e.date ? e.date.slice(5).replace("-", "/") : e.window + "(미정)"} ${e.title}`).join(" · ")}` : ""}</small></div>
+    <h3 style="margin:14px 0 4px;font-size:14px">진입 점수 타임라인 — 점수가 높았던 날이 좋은 진입이었나</h3>
     ${eoChart(m)}
+    ${eoBack(m)}
     <h3 id=s040map style="margin:14px 0 4px;font-size:14px">12개월 손익 지도 — 오늘 ${f2(m.ytm, 2)}%에 사서 12개월 뒤 팔 때 (시나리오 A~D 위치)</h3>
     ${eoGrid(m, r)}
-    <details class=fold><summary>기준 수정 — 한국 금리·문턱 (펼치기)</summary><div class=kv style="margin:8px 0">
+    ${eoLegs(m)}
+    <details class=fold><summary>기준 수정 — 한국 금리·구간 경계·환전 비용 (펼치기)</summary><div class=kv style="margin:8px 0">
       <label>한국 금리(원화 기회비용) %</label><input type=number step=any data-k="kr" value="${E.kr}" onchange="eoEdit(this)">
-      <label>가치 문턱</label><input type=number step=any data-k="gV" value="${E.gV}" onchange="eoEdit(this)">
-      <label>캐리 문턱</label><input type=number step=any data-k="gC" value="${E.gC}" onchange="eoEdit(this)">
-      <label>모멘텀 문턱</label><input type=number step=any data-k="gM" value="${E.gM}" onchange="eoEdit(this)">
+      <label>최적 경계(점)</label><input type=number step=any data-k="hi" value="${E.hi}" onchange="eoEdit(this)">
+      <label>불리 경계(점)</label><input type=number step=any data-k="lo" value="${E.lo}" onchange="eoEdit(this)">
+      <label>원↔달러 편도 환전 비용 %</label><input type=number step=any data-k="c1" value="${E.c1}" onchange="eoEdit(this)">
+      <label>달러↔헤알 편도 환전 비용 %</label><input type=number step=any data-k="c2" value="${E.c2}" onchange="eoEdit(this)">
       <button class=noprint onclick="eoReset()">기본값으로</button></div></details>
-    <div class=note><b>방법</b> — 채권 운용사·EM 캐리 데스크가 쓰는 <b>가치(Value)·캐리(Carry)·모멘텀(Momentum)</b> 3요인 틀을 PF32에 맞춘 규칙입니다. <b>가치</b> = ${RT.r} 실질 YTM(명목 ÷ 그날의 BCB Focus 만기 평균 물가)의 최근 1년(최소 60영업일) 백분위. <b>캐리</b> = ① 캐리 완충: 12개월 보유 시 손익 0이 되는 금리 상승폭(제로쿠폰 정확 재평가, 롤다운 포함)을 과거 12개월 금리 변동 표준편차(${(D.yield_dist && D.yield_dist.sd) || 235}bp)로 나눈 배수(0.8배→0점, 1.8배→100점) ② 캐리 ÷ 환율 변동성: (PF32 YTM − 한국 금리) ÷ BRL/KRW 60영업일 연율 변동성(0.3→0점, 1.0→100점), 두 값의 평균. <b>모멘텀</b> = 헤알 20영업일 변화(−5%→0점, +1%→100점, 비중 50%) + 금리 10영업일 변화(+40bp→0점, −10bp→100점, 25%) + 금리 변동성 레짐(최근 20일 ÷ 1년 중앙값, 2배→0점, 1배→100점, 25%). 가치·캐리가 '살 만한가', 모멘텀이 '지금인가'를 봅니다 — 싸도 하락 추세가 이어지는 동안 사면 평균 매수가가 나빠지는 경우가 많아서입니다. 손익 지도는 오늘 YTM에서 12개월 뒤 금리·환율 조합별 원화 실질 손익(${RT.kr})을 정확 재평가로 계산하므로 04-1(듀레이션 근사)과 소수점이 조금 다를 수 있습니다. 한국 금리 ${f2(E.kr, 1)}%는 <b>가정</b>(기준 수정에서 변경). 문턱·가중치는 경험적 규칙이고 과거 검증 기간이 약 1년이라 짧습니다. 예측·투자 권유가 아닙니다.</div>
+    <div class=note><b>방법</b> — 원화로 신흥국 현지통화 채권을 사는 투자자의 결과는 <b>금리보다 진입 시점의 환율 수준</b>이 크게 좌우합니다(올해 YTM은 13~16% 범위였지만 BRL/KRW는 305 → 225로 26% 하락). 그래서 채권 가치와 통화 가치를 따로 평가하는 신흥국 채권 운용 방식을 따릅니다. <b>환율 가치</b>(50%) = BRL/KRW의 최근 3년·5년 백분위 평균을 뒤집은 값. <b>금리 가치</b>(30%) = ${RT.r} 실질 YTM(명목 ÷ 그날의 BCB Focus 만기 평균 물가)의 최근 1년 백분위. <b>캐리</b>(20%) = ① 12개월 손익분기 금리 상승폭(제로쿠폰 정확 재평가) ÷ 과거 12개월 금리 변동 σ(0.8배→0점, 1.8배→100점) ② (YTM − 한국 금리) ÷ BRL/KRW 60영업일 연율 변동성(0.3→0점, 1.0→100점)의 평균. 이전 버전의 단기 모멘텀 요인은 '헤알이 오르는 중'에 가점을 줘 5~6월 고점(최악의 진입)을 최적으로 표시했고, 과거 검증에서도 예측력이 없어 뺐습니다. 환율 가치는 2021~2025년에는 잘 맞았지만 2019~2020년 위기 구간에서는 실패했습니다(점수 검증 표의 경고). 가중치·경계는 경험적 규칙이고 검증 표본이 작습니다. 예측·투자 권유가 아닙니다.</div>
   </div></section>`;
 }
 V.scen = m => eoSection(m) + polSection(m) + realCmpSection(m);
@@ -1615,7 +1647,7 @@ const HELP = [
     <p class=note>환율은 ECB 기준이라 주말·휴일에는 날짜가 그대로이고 하루 정도 지연됩니다.</p>`},
   {k: "t04", t: "04 시나리오 — 정치·재정과 환율 가정", h: `
     <p><b>의도</b> — "지금 사도 되는가(04-0)"와 "결과가 이렇게 나오면 어떤 선택이 유리한가(04-1·04-2)"를 숫자로 비교합니다.</p>
-    <ul><li><b>04-0 진입 최적화(3요인)</b> — 채권 운용사·EM 캐리 데스크의 <b>가치·캐리·모멘텀</b> 틀. <b>가치</b> = ${RT.r} 실질 YTM의 최근 1년 백분위. <b>캐리</b> = ① 12개월 손익분기 금리 상승폭(제로쿠폰 정확 재평가, 롤다운 포함) ÷ 과거 12개월 금리 변동 표준편차(0.8배→0점·1.8배→100점) ② (PF32 YTM − 한국 금리 가정) ÷ BRL/KRW 60영업일 연율 변동성(0.3→0점·1.0→100점)의 평균. <b>모멘텀</b> = 헤알 20영업일 변화(−5%→0점·+1%→100점, 50%) + 금리 10영업일 변화(+40bp→0점·−10bp→100점, 25%) + 금리 변동성 레짐(최근 20일 ÷ 1년 중앙값, 2배→0점·1배→100점, 25%). 세 점수가 모두 문턱(기본 60·50·60)을 넘으면 <b>최적 진입 구간</b>(초록), 가치·캐리만 넘으면 <b>모멘텀 대기</b>(주황). 종합 점수 = 가치 35 + 캐리 30 + 모멘텀 35. 타임라인의 전망 구간은 <b>보합 가정</b>(오늘 금리·환율 그대로)과 <b>최근 20영업일 추세 지속</b> 두 경로로, 조건이 맞는 첫 날을 표시합니다(예측 아님). <b>손익 지도</b> = 오늘 YTM에 사서 12개월 뒤 팔 때 금리 변화 × 헤알 변화별 ${RT.kr}(빨강 손실·주황 손절 기준 미만·초록), 시나리오 A~D 위치·확률가중 평균(◆)·02 탭 극단 가정(✕). 아래 지표: 시나리오 손실 확률, 상승/하락 비, (EV − 한국 금리) ÷ σ, 손익분기 금리·헤알. 한국 금리(기본 2.8%)·문턱은 "기준 수정"에서 바꿉니다(이 기기에만 저장). 과거 검증 기간이 약 1년이라 짧습니다. 02 탭 진입 판단표에도 같은 판정이 한 줄로 나옵니다.</li>
+    <ul><li><b>04-0 진입 점수</b> — 높을수록 좋은 진입. 점수 = <b>환율 가치</b> 50%(BRL/KRW의 최근 3년·5년 백분위 평균을 뒤집은 값, 쌀수록 높음) + <b>금리 가치</b> 30%(${RT.r} 실질 YTM의 최근 1년 백분위) + <b>캐리</b> 20%(12개월 손익분기 금리 상승 ÷ 과거 12개월 금리 변동 σ, (YTM − 한국 금리) ÷ BRL/KRW 60영업일 변동성). 75점 이상 = 최적(초록), 55~75 = 보통(주황), 55 미만 = 불리. 처음 버전의 단기 모멘텀 요인은 '헤알이 오르는 중'에 가점을 줘 2026년 5~6월 고점(사후 최악의 진입)을 최적으로 표시했고, 2017~2025 검증에서 예측력이 없어(상관 약 0.0) 점수에서 뺐습니다(참고 행으로만 표시). <b>점수 검증</b> 표: ① 과거 BRL/KRW로 환율 가치 구간별 12개월 뒤 환율 변화(2021-11 이후 시작은 상관 약 0.8로 잘 맞음) ② <b>재검증 경고</b>: 3년 창으로 2019-11부터 넓히면 상관 약 0.3으로 약해지고, 2019~2020 위기(재정·코로나) 때는 '싼 헤알'이 1년 더 20~30% 싸졌음 ③ 올해 점수 구간별 실제 손익(보유 기간이 달라 참고용). 즉 점수는 '과거 기준으로 싸다'는 뜻이지 바닥 신호가 아니며, 금액은 02 탭 극단 손실 한도로 정합니다. <b>손익 지도</b> = 오늘 YTM에 사서 12개월 뒤 팔 때 금리 변화 × 헤알 변화별 ${RT.kr}, 시나리오 A~D·확률가중 평균(◆)·02 탭 극단 가정(✕) 위치와 손실 확률·상승/하락 비·손익분기 지표. <b>환전 경로 분해</b> = 원→달러→헤알→달러→원으로 환전할 때 BRL/KRW 변화를 헤알/달러(브라질)와 달러/원(원화 강세) 두 다리로 나눈 표, 4번 환전 비용(기본 편도 원↔달러 0.25%·달러↔헤알 0.5%, 왕복 약 1.5%, 가정)은 손익 지도·시나리오 표·손익분기·검증 표에 반영. 한국 금리(기본 2.8%)·구간 경계·환전 비용은 "기준 수정"에서 바꿉니다(이 기기에만 저장). 02 탭 진입 판단표에도 점수가 한 줄로 나옵니다.</li>
     <li><b>04-1 정치·재정 시나리오</b> — 결선 후(10/25 이후)에는 충격이 이미 시세에 들어갔으므로 <b>진입 = 현재 실제 YTM·실질금리</b>이고, 시나리오는 진입 후 12개월 재정 전개 A 신뢰 회복 · B 머들스루 · C 재정 우려 재점화 · D 재정 지배(테일)로 나눕니다(기본 확률 20·40·28·12, <b>가정</b>). '직후' 열은 0(이미 반영). 결과는 PF32(고정) vs Selic vs IPCA+의 12개월 손익, 시나리오별 최선 종목, 분할 방식 제안, 12개월 후 가격(정확 재평가), 금리·환율 민감도. 달러채 시세가 결선 전 값이라 가산금리 변동은 공통 +60bp 가정입니다.</li>
     <li><b>달러표시 브라질 국채 비교와 이자 계산</b> — 수동 입력 시세(5종)로 PF32와 비교. 시세가 3일 넘으면 경고가 뜹니다. 이자(배당)는 달러채만 발생합니다(PF32는 제로쿠폰).</li>
     <li><b>04-2 헤알채 vs 달러채</b> — 환율 가정별(기본값은 최근 5년 실제 환율에서 계산) ${RT.kr} 만기수익률. 환율 가정은 입력칸으로 수정, "기본값으로"로 되돌립니다. 가정은 6종(마지막은 <b>달러 약세형</b>: 달러 연 -3%·헤알 -2.3%, 스트레스). 아래에 가정별 과거 발생 구간과 3국 정권·주요 이벤트 표(인과관계를 단정할 수 없음).</li>
@@ -1665,7 +1697,7 @@ const HELP = [
     <li><b>도달 빈도</b> — 국채 이력으로 갱신 때 계산.</li>
     <li>맨 위 "자동갱신" 시각이 오래되면 경고가 뜹니다(환율 4일 초과 지연, 자동 갱신 3일 이상 정지).</li></ul>`},
   {k: "limits", t: "한계와 주의 — 꼭 알아둘 것", h: `
-    <ul><li>이 앱은 <b>투자 권유가 아닙니다.</b> 세금·수수료·환전비용·IOF는 반영하지 않았습니다.</li>
+    <ul><li>이 앱은 <b>투자 권유가 아닙니다.</b> 세금·수수료·환전비용은 반영하지 않았습니다(04-0 손익 지도·검증 표만 4번 환전 비용 가정 반영). 브라질 IOF(외국인 자본시장 투자 환전세)는 현재 0%로 보며, 대통령령으로 바뀔 수 있어 매수 시 증권사 안내로 재확인합니다.</li>
     <li>가격은 <b>매수 쪽 가격</b>이고 매도가는 약 0.6% 낮습니다. 실제 거래는 증권사 호가로 확인하세요.</li>
     <li>환율·금리·정치 시나리오는 <b>가정</b>입니다. "환율 가정 4종"의 최악은 최근 5년 약세구간 평균이며 실제 최악(위기)은 훨씬 나쁠 수 있습니다.</li>
     <li>금리 상승기에는 헤알도 약해지는 경향(과거 상관 약 −0.4)이 있어, 매수선에 닿는 시점의 환율이 더 낮을 수 있습니다.</li>
