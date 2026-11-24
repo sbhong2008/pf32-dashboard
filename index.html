@@ -1190,7 +1190,7 @@ const EO_DEF = {kr: 2.8, hi: 75, lo: 55, c1: 0.25, c2: 0.5};   // c1 = 원↔달
 const EO_COST = () => { const E = EO(); return Math.pow((1 - E.c1 / 100) * (1 - E.c2 / 100), 2); };   // 왕복(진입 2번 + 회수 2번) 후 남는 비율
 const EO = () => ({...EO_DEF, ...Object.fromEntries(Object.entries(C.eopt || {}).filter(([k]) => k in EO_DEF))});
 const EO_LAB = ["불리 — 헤알이 비싸거나 금리 매력 낮음", "보통", "최적 — 상위 점수 구간"];
-let eoMemo = {};
+let eoMemo = {}, eoTrail = null;
 function eoEdit(el) { const v = parseFloat(el.value); if (isNaN(v)) return; C.eopt = {...(C.eopt || {}), [el.dataset.k]: v}; eoMemo = {}; try { localStorage.setItem("pf32cfg", JSON.stringify(C)); } catch (e) {} if (LOCAL) fetch("/api/config", {method: "POST", body: JSON.stringify(C)}).catch(() => {}); render(true); }
 function eoReset() { delete C.eopt; eoMemo = {}; try { localStorage.setItem("pf32cfg", JSON.stringify(C)); } catch (e) {} if (LOCAL) fetch("/api/config", {method: "POST", body: JSON.stringify(C)}).catch(() => {}); render(true); }
 const lin = (x, a, b) => x == null || !isFinite(x) ? null : Math.max(0, Math.min(100, (x - a) / (b - a) * 100));   // a→0점, b→100점(a>b 면 낮을수록 높은 점수)
@@ -1313,6 +1313,15 @@ function eoGrid(m, r) {
   r.rows.forEach(s => { const cx = px(+s.fx2 || 0), cy = py(+s.dy2 || 0), rr = 5 + Math.sqrt(s.w * 100) * 1.2; g += `<circle cx="${cx}" cy="${cy}" r="${rr}" fill="var(--paper)" stroke="currentColor" stroke-width="2" opacity=".92"/><text x="${cx}" y="${cy + 4}" text-anchor="middle" style="font-size:11px;font-weight:900">${s.name[0]}</text>`; });
   const ef = r.rows.reduce((a, s) => a + s.w * (+s.fx2 || 0), 0), ed = r.rows.reduce((a, s) => a + s.w * (+s.dy2 || 0), 0), S = STRESS();
   g += `<path d="M${px(ef)} ${py(ed) - 7}l7 7-7 7-7-7z" fill="currentColor"/><text x="${px(ef) + 9}" y="${py(ed) + 4}" style="font-size:10px;font-weight:700">EV</text>`;
+  // 오늘 상황: 결선 후 첫 정상 종가(충격일 다음 영업일)에 샀다면 지금까지 실제로 움직인 경로(주 단위 점 + 오늘)
+  const PS = eoSeries(m), b0 = PS.findIndex(q => q.d > ENTRY_BASE_DATE) + 1;
+  if (b0 > 0 && b0 < PS.length - 1) { const B = PS[b0], tr = PS.slice(b0).filter((q, k, a) => k % 5 === 0 || k === a.length - 1).map(q => ({d: q.d, dy: (q.y - B.y) * 100, fx: (q.f / B.f - 1) * 100})), Z = tr.at(-1);
+    g += `<polyline points="${tr.map(q => `${px(q.fx).toFixed(1)},${py(q.dy).toFixed(1)}`).join(" ")}" fill="none" stroke="#2a6fdb" stroke-width="2" stroke-dasharray="4 3"/>`;
+    tr.slice(0, -1).forEach((q, k) => g += `<circle cx="${px(q.fx)}" cy="${py(q.dy)}" r="${k ? 3 : 4}" fill="${k ? "#2a6fdb" : "var(--paper)"}" stroke="#2a6fdb" stroke-width="1.5"><title>${q.d} 금리 ${q.dy >= 0 ? "+" : ""}${f2(q.dy, 0)}bp · BRL/KRW ${pct(q.fx, 1)}</title></circle>`);
+    g += `<text x="${px(tr[0].fx) + 7}" y="${py(tr[0].dy) - 6}" style="font-size:9px;font-weight:700;fill:#2a6fdb;paint-order:stroke;stroke:var(--paper);stroke-width:3px">${B.d.slice(5).replace("-", "/")} 출발</text>`;
+    g += `<circle cx="${px(Z.fx)}" cy="${py(Z.dy)}" r="8" fill="#2a6fdb" stroke="var(--paper)" stroke-width="2"><title>오늘 ${Z.d}: ${B.d} 이후 금리 ${Z.dy >= 0 ? "+" : ""}${f2(Z.dy, 0)}bp · BRL/KRW ${pct(Z.fx, 1)}</title></circle>`;
+    g += `<text x="${px(Z.fx) - 11}" y="${py(Z.dy) + 4}" text-anchor="end" style="font-size:10px;font-weight:700;fill:#2a6fdb;paint-order:stroke;stroke:var(--paper);stroke-width:3px">오늘 ${Z.dy >= 0 ? "+" : ""}${f2(Z.dy, 0)}bp · ${pct(Z.fx, 1)}</text>`;
+    eoTrail = {B, Z, wk: (PS.length - 1 - b0) / 5}; }
   g += `<text x="${px(S.fx)}" y="${py(S.dy) + 5}" text-anchor="middle" style="font-size:15px;font-weight:900;fill:var(--bad)">✕</text><text x="${px(S.fx) + 8}" y="${py(S.dy) + 15}" style="font-size:9px;fill:var(--bad)">극단(02)</text>`;
   g += `<text x="${L}" y="${H - 6}" style="font-size:9px">칸 = 12개월 원화 실질 %(한국 물가 ${f2(kr, 1)}% 차감, 4번 환전 비용 ${f2((1 - EO_COST()) * 100, 1)}% 포함) · 원 = 시나리오(크기 ∝ 확률) · ◆ = 확률가중 평균 경로 · 굵은 선 = 손익 0 · 파선 = 손절 기준 ${f2(sr, 1)}%</text>`;
   // 시나리오 통계(정확 재평가)
@@ -1348,6 +1357,7 @@ function eoSection(m) {
     ${eoBack(m)}
     <h3 id=s040map style="margin:14px 0 4px;font-size:14px">12개월 손익 지도 — 오늘 ${f2(m.ytm, 2)}%에 사서 12개월 뒤 팔 때 (시나리오 A~D 위치)</h3>
     ${eoGrid(m, r)}
+    ${eoTrail ? (t => `<div class=note style="margin-top:4px"><b style="color:#2a6fdb">● 오늘 상황</b> — 결선 후 첫 정상 종가 <b>${t.B.d.slice(5).replace("-", "/")}</b>(PF32 ${f2(t.B.y, 2)}% · BRL/KRW ${f2(t.B.f, 1)})에 샀다면, 약 ${f2(t.wk, 0)}주 뒤인 오늘(${t.Z.d.slice(5).replace("-", "/")})까지 실제로 <b>금리 ${t.Z.dy >= 0 ? "+" : ""}${f2(t.Z.dy, 0)}bp · 헤알 ${pct(t.Z.fx, 1)}</b>를 지나왔습니다(파란 점선 = 주 단위 경로). 시나리오 원(12개월 가정)과 위치를 비교하는 용도이며, 기간이 ${f2(t.wk, 0)}주라 칸의 % 값(12개월 기준·오늘 진입 기준)이 그 진입의 실제 손익은 아닙니다. ${(() => { const sc = POL().sc, nf = sc.reduce((b, x) => Math.abs(x.fx2 - t.Z.fx) < Math.abs(b.fx2 - t.Z.fx) ? x : b), ny = sc.reduce((b, x) => Math.abs(x.dy2 - t.Z.dy) < Math.abs(b.dy2 - t.Z.dy) ? x : b); return `지금까지 이동만으로 이미 헤알은 <b>${nf.name[0]}</b>의 12개월 가정(${pct(nf.fx2, 0)}), 금리는 <b>${ny.name[0]}</b>의 12개월 가정(${ny.dy2 > 0 ? "+" : ""}${ny.dy2}bp)에 가장 가깝습니다.`; })()}</div>`)(eoTrail) : ""}
     ${eoLegs(m)}
     <details class=fold><summary>기준 수정 — 한국 금리·구간 경계·환전 비용 (펼치기)</summary><div class=kv style="margin:8px 0">
       <label>한국 금리(원화 기회비용) %</label><input type=number step=any data-k="kr" value="${E.kr}" onchange="eoEdit(this)">
