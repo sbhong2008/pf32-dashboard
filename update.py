@@ -231,6 +231,27 @@ def update_yield_dist(path=None):
 # 브라질 금리 충격(공개 사건일). 마지막 항목이 현재 진행 중인 충격 — 새 충격이 오면 여기에 추가
 SHOCKS = [("2013 테이퍼 발작", "2013-05-22"), ("2015 신용등급 강등", "2015-09-09"), ("2018 트럭 파업·대선", "2018-05-21"), ("2020 코로나", "2020-03-09"),
           ("2021 지출 상한 훼손", "2021-10-20"), ("2022 룰라 당선", "2022-10-31"), ("2024 재정 패키지 실망", "2024-11-27"), ("2026 결선", "2026-10-26")]
+FRED_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv?id={id}"   # 장기 환율(1995~): DEXBZUS(헤알/달러)·DEXKOUS(원/달러) → BRL/KRW 월 1회 표본
+def fx_long():
+    """04-0 만기 수익표의 '과거 5년 중 이보다 나빴던 비율'용 BRL/KRW 월별 장기 시계열. 실패하면 캐시(data/cache/fx_long.json) 사용."""
+    cf = CACHE / "fx_long.json"
+    try:
+        S = {}
+        for k in ("DEXBZUS", "DEXKOUS"):
+            with urllib.request.urlopen(urllib.request.Request(FRED_URL.format(id=k), headers={"User-Agent": "curl/8.0"}), timeout=60) as r:   # FRED는 브라우저형 UA에 응답이 멈추는 경우가 있음
+                S[k] = {a: float(b) for a, b in (ln.split(",") for ln in r.read().decode("utf-8").splitlines()[1:]) if b not in ("", ".")}
+        out, seen = [], set()
+        for d in sorted(set(S["DEXBZUS"]) & set(S["DEXKOUS"])):
+            if d[:7] in seen: continue
+            seen.add(d[:7]); out.append([d[:7], round(S["DEXKOUS"][d] / S["DEXBZUS"][d], 2)])
+        if len(out) < 120: raise ValueError("표본 부족")
+        cf.write_text(json.dumps(out), encoding="utf-8")
+        return out
+    except Exception as e:
+        log("장기 환율(FRED) 실패, 캐시 사용:", e)
+        return json.loads(cf.read_text(encoding="utf-8")) if cf.exists() else None
+
+
 FX_OLD_URL = "https://api.frankfurter.dev/v1/2008-01-01..2016-12-31?base=BRL&symbols=KRW"
 def update_entry_hist(fx, path=None):
     """04-0 진입 점수용: 과거(2009~) 매 주, PF32와 비슷한 고정금리 LTN(잔존 4~6.5년, 2015-03 이전엔 장기물이 없어 2.5~6.5년)을 그날 매수 PU로 사서
@@ -279,7 +300,7 @@ def update_entry_hist(fx, path=None):
             if e: path.append([k, round((e[0] - b[0]) * 100), round((FX[i0 + k][1] / FX[i0 - 1][1] - 1) * 100, 1), e[1]])
         if path: shocks.append({"name": name, "date": sd, "base_y": round(b[0], 2), "path": path})
     log(f"진입 이력: {len(out)}주 ({out[0][0]}~{out[-1][0]}), 충격 {len(shocks)}건")
-    return {"rows": out, "shocks": shocks, "asof": out[-1][0], "note": "진입일, 진입 YTM, 1년 뒤 원화 손익%(환전 비용 제외)"}
+    return {"rows": out, "shocks": shocks, "fx_long": fx_long(), "asof": out[-1][0], "note": "진입일, 진입 YTM, 1년 뒤 원화 손익%(환전 비용 제외)"}
 
 
 def update_ust():
