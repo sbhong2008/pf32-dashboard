@@ -228,6 +228,44 @@ def update_yield_dist(path=None):
     return out
 
 
+FX_OLD_URL = "https://api.frankfurter.dev/v1/2008-01-01..2016-12-31?base=BRL&symbols=KRW"
+def update_entry_hist(fx, path=None):
+    """04-0 진입 점수용: 과거(2009~) 매 주, PF32와 비슷한 고정금리 LTN(잔존 4~6.5년, 2015-03 이전엔 장기물이 없어 2.5~6.5년)을 그날 매수 PU로 사서
+    1년 뒤 같은 종목 매도 PU·실제 BRL/KRW로 팔았을 때의 원화 손익(%, 환전 비용 제외 — 앱이 비용을 곱함). [진입일, 진입 YTM, 원화 손익] 목록.
+    2016-11 이전 환율은 Frankfurter(ECB) 2008~2016 이력을 캐시(data/cache/fx_hist_2008.json)해 이어 붙인다."""
+    path = path or CACHE / "PrecoTaxaTesouroDireto.csv"
+    if not Path(path).exists(): raise FileNotFoundError("국채 CSV 캐시 없음")
+    oldf = CACHE / "fx_hist_2008.json"
+    if not oldf.exists():
+        with urllib.request.urlopen(urllib.request.Request(FX_OLD_URL, headers=UA), timeout=60) as r: oldf.write_text(r.read().decode("utf-8"), encoding="utf-8")
+    mp = {d: v["KRW"] for d, v in json.loads(oldf.read_text(encoding="utf-8"))["rates"].items() if "KRW" in v}
+    mp.update({d: v for d, v in fx})
+    FX = sorted((date.fromisoformat(d), v) for d, v in mp.items()); FD = [d for d, _ in FX]
+    import bisect
+    fxat = lambda d: FX[bisect.bisect_right(FD, d) - 1][1]
+    B = {}
+    with open(path, encoding="utf-8", errors="replace", newline="") as f:
+        for r in csv.reader(f, delimiter=";"):
+            if not r or r[0] != "Tesouro Prefixado": continue
+            try: d = datetime.strptime(r[2], "%d/%m/%Y").date(); mv = datetime.strptime(r[1], "%d/%m/%Y").date(); B.setdefault(mv, {})[d] = (float(r[3].replace(",", ".")), num(r[5]), num(r[6]))
+            except (ValueError, IndexError, TypeError): continue
+    out = []
+    for k, (d, f0) in enumerate(FX):
+        if k % 5: continue   # 주 1회 표본
+        lo = 2.5 if d < date(2015, 3, 1) else 4.0
+        c = [(abs((mv - d).days / 365.25 - 5), mv) for mv in B if lo <= (mv - d).days / 365.25 <= 6.5 and d in B[mv]]
+        if not c: continue
+        mv = min(c)[1]; y, pb, _ = B[mv][d]; t = d + timedelta(days=365)
+        ds = sorted(x for x in B[mv] if t <= x <= t + timedelta(days=10))
+        if not ds or not pb or ds[0] > FD[-1]: continue
+        ps = B[mv][ds[0]][2]
+        if not ps: continue
+        out.append([d.isoformat(), round(y, 2), round(((ps / pb) * (fxat(ds[0]) / f0) - 1) * 100, 1)])
+    if len(out) < 200: raise ValueError("표본 부족")
+    log(f"진입 이력: {len(out)}주 ({out[0][0]}~{out[-1][0]})")
+    return {"rows": out, "asof": out[-1][0], "note": "진입일, 진입 YTM, 1년 뒤 원화 손익%(환전 비용 제외)"}
+
+
 def update_ust():
     """미 재무부 일별 명목 국채금리 3·5·7·10년(키 불필요) 최근 약 150영업일 — 달러표시 브라질 채권의 입력 시세 이후 금리 변동 추정용."""
     y = date.today().year; rows = {}
@@ -444,6 +482,9 @@ def main():
     try: ydist = update_yield_dist(); status["ydist"] = "ok"
     except Exception as e:
         log("금리 변동 분포 계산 실패(이전 값 유지):", e); status["ydist"] = f"error: {e}"; ydist = prev.get("yield_dist")
+    try: ehist = update_entry_hist(fx); status["ehist"] = "ok"
+    except Exception as e:
+        log("진입 이력 계산 실패(이전 값 유지):", e); status["ehist"] = f"error: {e}"; ehist = prev.get("entry_hist")
     prev_infl = prev.get("infl") or {}
     try: infl = dict(infl or {}, **update_infl_kus())
     except Exception as e:
@@ -484,7 +525,7 @@ def main():
     out = {"generated": datetime.now().astimezone().isoformat(timespec="seconds"), "status": status,
            "live": live, "live_info": live_info, "bonds": sorted(bonds, key=lambda b: (b["tipo"], b["venc"][-4:])),
            "series": series,
-           "fx": {"latest": fx[-1] if fx else None, "series": fx}, "fx_usd": fx_usd, "fx_stats": fxs, "infl": infl, "ust": ust, "mkt": mkt, "yield_reach": reach, "yield_dist": ydist}
+           "fx": {"latest": fx[-1] if fx else None, "series": fx}, "fx_usd": fx_usd, "fx_stats": fxs, "infl": infl, "ust": ust, "mkt": mkt, "yield_reach": reach, "yield_dist": ydist, "entry_hist": ehist}
     (DATA / "data.json").write_text(json.dumps(out, ensure_ascii=False), encoding="utf-8")
     log("data.json 생성 완료", status)
     if not os.environ.get("GITHUB_ACTIONS") and not os.environ.get("PF32_NO_NOTIFY"):   # 로컬 실행: 새로 켜진 신호를 macOS 알림으로 (Actions 는 워크플로가 따로 처리)
