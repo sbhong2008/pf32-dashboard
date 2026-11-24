@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """PF32 데이터 업데이터 — 환율(BRL/KRW)·브라질 국채 CSV를 내려받아 data/data.json 생성.
 표준 라이브러리만 사용. 매일 실행해도 안전(ETag/Range 이어받기, 변경 없으면 건너뜀)."""
-import csv, io, glob, json, os, shutil, subprocess, sys, time, urllib.request, urllib.error
+import bisect, csv, io, glob, json, os, shutil, subprocess, sys, time, urllib.request, urllib.error
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
@@ -228,6 +228,9 @@ def update_yield_dist(path=None):
     return out
 
 
+# 브라질 금리 충격(공개 사건일). 마지막 항목이 현재 진행 중인 충격 — 새 충격이 오면 여기에 추가
+SHOCKS = [("2013 테이퍼 발작", "2013-05-22"), ("2015 신용등급 강등", "2015-09-09"), ("2018 트럭 파업·대선", "2018-05-21"), ("2020 코로나", "2020-03-09"),
+          ("2021 지출 상한 훼손", "2021-10-20"), ("2022 룰라 당선", "2022-10-31"), ("2024 재정 패키지 실망", "2024-11-27"), ("2026 결선", "2026-10-26")]
 FX_OLD_URL = "https://api.frankfurter.dev/v1/2008-01-01..2016-12-31?base=BRL&symbols=KRW"
 def update_entry_hist(fx, path=None):
     """04-0 진입 점수용: 과거(2009~) 매 주, PF32와 비슷한 고정금리 LTN(잔존 4~6.5년, 2015-03 이전엔 장기물이 없어 2.5~6.5년)을 그날 매수 PU로 사서
@@ -241,7 +244,6 @@ def update_entry_hist(fx, path=None):
     mp = {d: v["KRW"] for d, v in json.loads(oldf.read_text(encoding="utf-8"))["rates"].items() if "KRW" in v}
     mp.update({d: v for d, v in fx})
     FX = sorted((date.fromisoformat(d), v) for d, v in mp.items()); FD = [d for d, _ in FX]
-    import bisect
     fxat = lambda d: FX[bisect.bisect_right(FD, d) - 1][1]
     B = {}
     with open(path, encoding="utf-8", errors="replace", newline="") as f:
@@ -249,21 +251,35 @@ def update_entry_hist(fx, path=None):
             if not r or r[0] != "Tesouro Prefixado": continue
             try: d = datetime.strptime(r[2], "%d/%m/%Y").date(); mv = datetime.strptime(r[1], "%d/%m/%Y").date(); B.setdefault(mv, {})[d] = (float(r[3].replace(",", ".")), num(r[5]), num(r[6]))
             except (ValueError, IndexError, TypeError): continue
+    def ent(d):   # 그날 진입: (YTM, 1년 뒤 원화 손익% 또는 None)
+        lo = 2.5 if d < date(2015, 3, 1) else 4.0
+        c = [(abs((mv - d).days / 365.25 - 5), mv) for mv in B if lo <= (mv - d).days / 365.25 <= 6.5 and d in B[mv]]
+        if not c: return None
+        mv = min(c)[1]; y, pb, _ = B[mv][d]; t = d + timedelta(days=365)
+        ds = sorted(x for x in B[mv] if t <= x <= t + timedelta(days=10))
+        ps = B[mv][ds[0]][2] if ds and ds[0] <= FD[-1] else None
+        return y, (round(((ps / pb) * (fxat(ds[0]) / fxat(d)) - 1) * 100, 1) if ps and pb else None)
     out = []
     for k, (d, f0) in enumerate(FX):
         if k % 5: continue   # 주 1회 표본
-        lo = 2.5 if d < date(2015, 3, 1) else 4.0
-        c = [(abs((mv - d).days / 365.25 - 5), mv) for mv in B if lo <= (mv - d).days / 365.25 <= 6.5 and d in B[mv]]
-        if not c: continue
-        mv = min(c)[1]; y, pb, _ = B[mv][d]; t = d + timedelta(days=365)
-        ds = sorted(x for x in B[mv] if t <= x <= t + timedelta(days=10))
-        if not ds or not pb or ds[0] > FD[-1]: continue
-        ps = B[mv][ds[0]][2]
-        if not ps: continue
-        out.append([d.isoformat(), round(y, 2), round(((ps / pb) * (fxat(ds[0]) / f0) - 1) * 100, 1)])
+        e = ent(d)
+        if e and e[1] is not None: out.append([d.isoformat(), round(e[0], 2), e[1]])
     if len(out) < 200: raise ValueError("표본 부족")
-    log(f"진입 이력: {len(out)}주 ({out[0][0]}~{out[-1][0]})")
-    return {"rows": out, "asof": out[-1][0], "note": "진입일, 진입 YTM, 1년 뒤 원화 손익%(환전 비용 제외)"}
+    # 과거 금리 충격 이후 경로: 충격 전 영업일 대비 금리 변화(bp)·BRL/KRW 변화(%)와 그날 진입의 1년 뒤 원화 손익 — 04-0 '충격 후 진입 시점' 비교용
+    shocks = []
+    for name, sd in SHOCKS:
+        i0 = bisect.bisect_left(FD, date.fromisoformat(sd))
+        if i0 <= 0 or i0 >= len(FD): continue
+        b = ent(FD[i0 - 1])
+        if not b: continue
+        path = []
+        for k in range(0, 260):
+            if i0 + k >= len(FD): break
+            e = ent(FD[i0 + k])
+            if e: path.append([k, round((e[0] - b[0]) * 100), round((FX[i0 + k][1] / FX[i0 - 1][1] - 1) * 100, 1), e[1]])
+        if path: shocks.append({"name": name, "date": sd, "base_y": round(b[0], 2), "path": path})
+    log(f"진입 이력: {len(out)}주 ({out[0][0]}~{out[-1][0]}), 충격 {len(shocks)}건")
+    return {"rows": out, "shocks": shocks, "asof": out[-1][0], "note": "진입일, 진입 YTM, 1년 뒤 원화 손익%(환전 비용 제외)"}
 
 
 def update_ust():
